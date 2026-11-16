@@ -1,0 +1,45 @@
+name: Sync game build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull the live build
+        run: |
+          set -euo pipefail
+          BASE="https://site-9ff8c8b6cb144074b0d31eb8e437724b.freebuff.page"
+          mkdir -p icons
+          curl -fsSL --retry 3 "$BASE/" -o index.html
+          curl -fsSL --retry 3 "$BASE/assets/pwa/manifest.json" -o manifest.json
+          curl -fsSL --retry 3 "$BASE/assets/pwa/sw.js" -o sw.js
+          for f in icon-192.png icon-512.png maskable-512.png apple-touch-icon.png; do
+            curl -fsSL --retry 3 "$BASE/assets/pwa/icons/$f" -o "icons/$f"
+          done
+          touch .nojekyll
+          ls -l index.html manifest.json sw.js icons
+
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "dead-sector-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html manifest.json sw.js icons .nojekyll
+          if git diff --staged --quiet; then echo "already up to date"; exit 0; fi
+          git commit -m "Sync game build from the live preview"
+          git push
