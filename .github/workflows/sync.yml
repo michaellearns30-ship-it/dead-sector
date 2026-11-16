@@ -20,23 +20,168 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pull the live build
+      - name: Fetch the current build
         run: |
           set -euo pipefail
-          BASE="https://site-9ff8c8b6cb144074b0d31eb8e437724b.freebuff.page"
-          mkdir -p icons
-          curl -fsSL --retry 3 "$BASE/" -o index.html
-          curl -fsSL --retry 3 "$BASE/assets/pwa/manifest.json" -o manifest.json
-          curl -fsSL --retry 3 "$BASE/assets/pwa/sw.js" -o sw.js
-          for f in icon-192.png icon-512.png maskable-512.png apple-touch-icon.png; do
-            curl -fsSL --retry 3 "$BASE/assets/pwa/icons/$f" -o "icons/$f"
-          done
-          touch .nojekyll
-          ls -l index.html manifest.json sw.js icons
+          curl -fsSL --retry 3 "https://site-9ff8c8b6cb144074b0d31eb8e437724b.freebuff.page/" -o index.html
+          grep -q "Dead Sector" index.html
+          wc -c index.html
 
-      - name: Commit
+      - name: Write manifest and service worker
         run: |
           set -euo pipefail
+          cat > manifest.json <<'JSON'
+          {
+            "name": "Dead Sector",
+            "short_name": "Dead Sector",
+            "description": "Top-down zombie survival in a dark, abandoned city.",
+            "start_url": "./index.html",
+            "scope": "./",
+            "display": "fullscreen",
+            "display_override": ["fullscreen", "standalone"],
+            "orientation": "landscape",
+            "background_color": "#08080a",
+            "theme_color": "#0a0a0c",
+            "icons": [
+              { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+              { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+              { "src": "./icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+            ]
+          }
+          JSON
+          cat > sw.js <<'JS'
+          /* Dead Sector service worker.
+             Network first for everything, cache as the fallback: the game keeps working
+             offline, and a fresh push is picked up on the very next launch. */
+          var VERSION = 'dead-sector-v1';
+          var SHELL = ['./', './index.html', './manifest.json', './icons/icon-192.png',
+                       './icons/icon-512.png', './icons/maskable-512.png',
+                       './icons/apple-touch-icon.png'];
+
+          self.addEventListener('install', function (e) {
+            e.waitUntil(
+              caches.open(VERSION).then(function (c) { return c.addAll(SHELL); })
+                .then(function () { return self.skipWaiting(); })
+            );
+          });
+
+          self.addEventListener('activate', function (e) {
+            e.waitUntil(
+              caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) {
+                  return k === VERSION ? null : caches.delete(k);
+                }));
+              }).then(function () { return self.clients.claim(); })
+            );
+          });
+
+          self.addEventListener('fetch', function (e) {
+            var req = e.request;
+            if (req.method !== 'GET') return;
+            var url = new URL(req.url);
+            if (url.origin !== self.location.origin) return;
+
+            e.respondWith(
+              fetch(req, { cache: 'no-cache' }).then(function (res) {
+                if (res && res.ok) {
+                  var copy = res.clone();
+                  caches.open(VERSION).then(function (c) { c.put(req, copy); });
+                }
+                return res;
+              }).catch(function () {
+                return caches.match(req, { ignoreSearch: true }).then(function (hit) {
+                  if (hit) return hit;
+                  if (req.mode === 'navigate') return caches.match('./index.html');
+                  return new Response('offline', { status: 503, statusText: 'offline' });
+                });
+              })
+            );
+          });
+          JS
+          node --check sw.js
+          python3 -c "import json;json.load(open('manifest.json'));print('manifest ok')"
+
+      - name: Draw the home-screen icons
+        run: |
+          python3 - <<'PY'
+          import zlib, struct, math, os
+
+          def chunk(tag, data):
+              return (struct.pack('>I', len(data)) + tag + data
+                      + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff))
+
+          def png(size, rows):
+              raw = b''.join(b'\x00' + bytes(r) for r in rows)
+              return (b'\x89PNG\r\n\x1a\n'
+                      + chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 6, 0, 0, 0))
+                      + chunk(b'IDAT', zlib.compress(raw, 9))
+                      + chunk(b'IEND', b''))
+
+          BONE = (232, 223, 201)
+          RED = (192, 38, 31)
+          BRACK = (168, 52, 44)
+          GLOW = (226, 158, 74)
+          BG = (8, 8, 10)
+          TICKS = [(0.40, 0, 0.88, 0), (-0.88, 0, -0.40, 0),
+                   (0, 0.40, 0, 0.88), (0, -0.88, 0, -0.40)]
+
+          def seg(px, py, ax, ay, bx, by):
+              dx, dy = bx - ax, by - ay
+              L = dx * dx + dy * dy or 1e-9
+              t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L))
+              return math.hypot(px - ax - t * dx, py - ay - t * dy)
+
+          def shade(x, y):
+              r, g, b = BG
+              ga = max(0.0, 1 - math.hypot(x, y - 0.14) / 0.80)
+              ga = ga * ga * 0.62
+              r += (GLOW[0] - r) * ga
+              g += (GLOW[1] - g) * ga
+              b += (GLOW[2] - b) * ga
+              if abs(math.hypot(x, y) - 0.56) < 0.042:
+                  r, g, b = BONE
+              for t in TICKS:
+                  if seg(x, y, t[0], t[1], t[2], t[3]) < 0.042:
+                      r, g, b = BONE
+              if math.hypot(x, y) < 0.15:
+                  r, g, b = RED
+              for sx in (-1, 1):
+                  for sy in (-1, 1):
+                      cx, cy = 0.84 * sx, 0.84 * sy
+                      if (seg(x, y, cx, cy, cx - 0.34 * sx, cy) < 0.05 or
+                              seg(x, y, cx, cy, cx, cy - 0.34 * sy) < 0.05):
+                          r, g, b = BRACK
+              return r, g, b
+
+          def make(size, inner):
+              rows = []
+              for yy in range(size):
+                  row = []
+                  for xx in range(size):
+                      a0 = a1 = a2 = 0.0
+                      for dy in (-0.25, 0.25):
+                          for dx in (-0.25, 0.25):
+                              nx = ((xx + 0.5 + dx) / size * 2 - 1) / inner
+                              ny = ((yy + 0.5 + dy) / size * 2 - 1) / inner
+                              c = shade(nx, ny)
+                              a0 += c[0]; a1 += c[1]; a2 += c[2]
+                      row += [int(a0 / 4), int(a1 / 4), int(a2 / 4), 255]
+                  rows.append(row)
+              return png(size, rows)
+
+          os.makedirs('icons', exist_ok=True)
+          open('icons/icon-192.png', 'wb').write(make(192, 0.88))
+          open('icons/icon-512.png', 'wb').write(make(512, 0.88))
+          open('icons/maskable-512.png', 'wb').write(make(512, 0.68))
+          open('icons/apple-touch-icon.png', 'wb').write(make(180, 0.90))
+          print('icons written')
+          PY
+          file icons/*.png
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          touch .nojekyll
           git config user.name "dead-sector-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html manifest.json sw.js icons .nojekyll
