@@ -85,6 +85,27 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   .gbtn b{font-size:15px}.gbtn.md b{font-size:12px}.gbtn.sm b{font-size:11px}
   .gbtn .cnt,.gbtn.md .cnt,.gbtn.sm .cnt{font-size:8px}
 }
+/* quick swap: three compact slots on a centre rail, between the two thumbs, so a weapon
+   change is one tap in the middle of a swarm and never a trip through a menu */
+#wsel{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 6px);
+  display:flex;gap:6px;pointer-events:auto}
+.wsl{position:relative;width:54px;height:42px;border-radius:12px;border:1px solid rgba(232,223,201,.13);
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(6,7,9,.34));color:rgba(239,233,220,.6);
+  font:800 7.5px/1 ui-monospace,monospace;letter-spacing:.09em;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;opacity:.7;transition:opacity .15s,transform .1s}
+.wsl b{font-size:15px;line-height:1}
+.wsl i{font-style:normal;font-size:8px;color:#ffd166;letter-spacing:.02em}
+.wsl.on{opacity:1;border-color:rgba(255,209,102,.5);
+  background:linear-gradient(180deg,rgba(192,38,31,.34),rgba(6,7,9,.44));
+  box-shadow:0 0 0 1px rgba(255,209,102,.14),0 2px 10px rgba(0,0,0,.5)}
+.wsl:active{transform:scale(.95)}
+.wsl.empty{opacity:.32}
+.wsl.empty i{color:#8b8478}
+@media (orientation:landscape) and (max-height:560px){
+  .wsl{width:46px;height:36px;border-radius:10px}
+  .wsl b{font-size:13px}.wsl i{font-size:7px}
+}
+#bFlare{right:calc(env(safe-area-inset-right) + 60px);bottom:calc(env(safe-area-inset-bottom) + 4px)}
 #pause{position:absolute;left:calc(env(safe-area-inset-left) + 0px);top:calc(env(safe-area-inset-top) + 0px);
   width:32px;height:32px;border-radius:9px;border:1px solid rgba(232,223,201,.12);background:rgba(0,0,0,.28);
   color:rgba(232,223,201,.7);font:800 13px/1 ui-monospace,monospace;pointer-events:auto;opacity:.75}
@@ -176,11 +197,13 @@ p{margin:0 0 10px;color:var(--dim);font-size:13px}
   <div class="hpRow"><div class="hpBar"><div class="hpFill" id="hpFill"></div></div><div class="hpNum" id="hpNum">100</div></div>
   <div class="topMid"><div class="waveT" id="waveT">WAVE 1/3</div><div class="waveS" id="waveS">0 LEFT</div></div>
   <div class="topRight"><div class="scrap" id="scrap">0</div><div class="scrapS">SCRAP</div></div>
-  <div class="ammo"><span id="ammo">12</span><small>AMMO</small></div>
+  <div class="ammo"><span id="ammo">12</span><small id="ammoS">PISTOL</small></div>
   <div class="btns">
     <button class="gbtn" id="bSpecial"><b id="spIcon">◆</b><span id="spName">SPECIAL</span><span class="cnt" id="spCd"></span></button>
     <button class="gbtn md" id="bGrenade"><b>◉</b><span>GRENADE</span><span class="cnt" id="grenCnt">3</span></button>
     <button class="gbtn sm" id="bMine"><b>▲</b><span>TRAP</span><span class="cnt" id="mineCnt">2</span></button>
+    <button class="gbtn sm" id="bFlare"><b>✦</b><span>FLARE</span><span class="cnt" id="flareCnt">2</span></button>
+    <div id="wsel"></div>
   </div>
   <button id="pause">❚❚</button>
 </div>
@@ -353,8 +376,70 @@ var UPS=[
   {k:'mag', name:'Extended mags',  desc:'+3 rounds per level',     cost:function(l){return 26+l*18;}, max:8},
   {k:'hp',  name:'Body armour',    desc:'+14 max health per level',cost:function(l){return 32+l*20;}, max:8},
   {k:'spd', name:'Light boots',    desc:'+7% move speed per level',cost:function(l){return 28+l*16;}, max:6},
-  {k:'nade',name:'Bandolier',      desc:'+1 grenade and +1 trap',  cost:function(l){return 40+l*30;}, max:5}
+  {k:'nade',name:'Bandolier',      desc:'+1 grenade, +1 trap, +1 flare', cost:function(l){return 40+l*30;}, max:5},
+  {k:'reload',name:'Quick hands',   desc:'-10% reload time per level', cost:function(l){return 30+l*20;}, max:5},
+  {k:'ammo',name:'Ammo tins',       desc:'+50% reserve ammo',         cost:function(l){return 26+l*20;}, max:4},
+  {k:'armor',name:'Plate carrier',  desc:'-7% damage taken per level',cost:function(l){return 38+l*26;}, max:5}
 ];
+/* ---- weapons ---- one sidearm you never run dry of, one that sprays, one that ends a
+   hallway. The multipliers are against the survivor's own base gun, so every character
+   keeps their identity whichever barrel they pick up. */
+var WEAPONS=[
+  {id:'pistol', name:'PISTOL',  icon:'▮', dmg:1,    rate:1,    mag:1,    reload:1,    pellets:1, spread:0.05, cap:Infinity},
+  {id:'smg',    name:'SMG',     icon:'▤', dmg:0.58, rate:1.85, mag:2.2,  reload:0.82, pellets:1, spread:0.11, cap:150},
+  {id:'shotgun',name:'SHOTGUN', icon:'▥', dmg:0.46, rate:0.40, mag:0.55, reload:1.40, pellets:6, spread:0.30, cap:24}
+];
+function weaponStats(i){
+  var w=WEAPONS[i], u=save.up;
+  return {
+    dmg:CH.dmg*(1+u.dmg*0.12)*w.dmg,
+    rate:CH.rate*(1+u.rate*0.09)*w.rate,
+    mag:Math.max(1,Math.round((CH.mag+u.mag*3)*w.mag)),
+    reload:CH.reload*w.reload/(1+(u.reload||0)*0.10),
+    pellets:w.pellets, spread:w.spread
+  };
+}
+function reserveCap(i){
+  var w=WEAPONS[i];
+  return w.cap===Infinity?Infinity:Math.round(w.cap*(1+(save.up.ammo||0)*0.5));
+}
+function reloadNow(){
+  if(!player) return;
+  if(player.reserve===Infinity){ player.ammo=player.mag; return; }
+  var take=Math.min(player.mag-player.ammo, player.reserve);
+  player.ammo+=take; player.reserve-=take;
+  if(take<=0) player.reloading=0;
+}
+/* one tap, one gun: the weapon you were holding is stashed exactly as it was */
+function swapWeapon(i){
+  if(!player || i<0 || i>=WEAPONS.length) return false;
+  if(i===player.wi) return false;
+  var hold=player.w[player.wi];
+  hold.ammo=player.ammo; hold.mag=player.mag; hold.reserve=player.reserve;
+  player.wi=i;
+  var nw=player.w[i];
+  player.ammo=nw.ammo; player.mag=nw.mag; player.reserve=nw.reserve;
+  player.stat=weaponStats(i);
+  player.reloadTime=player.stat.reload;
+  player.dmg=player.stat.dmg; player.rate=player.stat.rate;
+  player.reloading=0; player.cd=Math.max(player.cd,0.16);
+  /* the change makes the street flicker for a frame: two hands, one weapon */
+  beep(540,0.05,0.03,'triangle');
+  hud();
+  return true;
+}
+/* a supply crate is ammo: every weapon you carry that takes rounds gets some back */
+function refillAmmo(boost){
+  if(!player) return;
+  for(var i=0;i<WEAPONS.length;i++){
+    var cap=reserveCap(i);
+    if(cap===Infinity) continue;
+    var add=Math.round(cap*(0.18+boost*0.004));
+    player.w[i].reserve=Math.min(cap, player.w[i].reserve+add);
+  }
+  player.reserve=player.w[player.wi].reserve;
+}
+
 /* the route out: suburbs, then the city that is worse, then the harbour that is burned,
    then inland through trees with no lights. Each sector sets its own darkness. */
 var LEVELS=[
@@ -378,12 +463,12 @@ var LEVELS=[
 
 /* ================== save ================== */
 var KEY='dead-sector-v1';
-var save={char:'rook',mode:'sticks',mode2:1,up:{dmg:0,rate:0,mag:0,hp:0,spd:0,nade:0},scrap:0,
+var save={char:'rook',mode:'sticks',mode2:1,up:{dmg:0,rate:0,mag:0,hp:0,spd:0,nade:0,reload:0,armor:0,ammo:0},scrap:0,
   kills:0,deaths:0,shots:0,hits:0,levels:0,bestWave:0,daily:{},nadeBonus:0};
 function loadSave(){
   try{ var r=localStorage.getItem(KEY); if(r){ var o=JSON.parse(r); if(o&&typeof o==='object'){
     Object.keys(save).forEach(function(k){ if(o[k]!==undefined) save[k]=o[k]; });
-    save.up=Object.assign({dmg:0,rate:0,mag:0,hp:0,spd:0,nade:0},o.up||{});
+    save.up=Object.assign({dmg:0,rate:0,mag:0,hp:0,spd:0,nade:0,reload:0,armor:0,ammo:0},o.up||{});
   } } }catch(e){}
 }
 function persist(){ try{ localStorage.setItem(KEY,JSON.stringify(save)); }catch(e){} }
@@ -394,6 +479,40 @@ function rnd(a,b){ return a+Math.random()*(b-a); }
 function dist2(ax,ay,bx,by){ var dx=ax-bx,dy=ay-by; return dx*dx+dy*dy; }
 function ang(a,b){ return Math.atan2(b.y-a.y,b.x-a.x); }
 function $(id){ return document.getElementById(id); }
+/* ---- sound ---- a fuse you can hear over the fight. Built on the first touch (mobile
+   browsers will not start a context before a gesture), and every call fails quietly. */
+var AC=null, sndOn=true;
+function ac(){
+  if(!sndOn) return null;
+  try{
+    if(!AC){ var K=window.AudioContext||window.webkitAudioContext; if(!K) return null; AC=new K(); }
+    if(AC.state==='suspended') AC.resume();
+    return AC;
+  }catch(e){ return null; }
+}
+function beep(freq,dur,vol,type){
+  var a=ac(); if(!a) return;
+  try{
+    var o=a.createOscillator(), g=a.createGain();
+    o.type=type||'square'; o.frequency.value=freq;
+    var t0=a.currentTime, d=dur||0.09;
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.linearRampToValueAtTime(vol||0.045,t0+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+    o.connect(g); g.connect(a.destination); o.start(t0); o.stop(t0+d+0.02);
+  }catch(e){}
+}
+function boomSnd(power){
+  var a=ac(); if(!a) return;
+  try{
+    var sr=a.sampleRate, len=Math.floor(sr*0.6), buf=a.createBuffer(1,len,sr), d=buf.getChannelData(0);
+    for(var i=0;i<len;i++){ var e=1-i/len; d[i]=(Math.random()*2-1)*e*e; }
+    var n=a.createBufferSource(); n.buffer=buf;
+    var f=a.createBiquadFilter(); f.type='lowpass'; f.frequency.value=420+240*(power||1);
+    var g=a.createGain(); g.gain.value=0.32*(power||1);
+    n.connect(f); f.connect(g); g.connect(a.destination); n.start();
+  }catch(e){}
+}
 function el(t,c,x){ var n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=x; return n; }
 /* seeded rng for the daily */
 function mulberry(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; var t=Math.imul(seed^seed>>>15,1|seed);
@@ -415,6 +534,9 @@ var level=null, levelIndex=0, waveIndex=0, waveQueue=[], spawnTimer=0, cleared=f
 var squadPack=0;
 /* a gunshot is a light: it lifts the street for a few frames instead of only decalling it */
 var flashLight={t:0,x:0,y:0}, muzzleT=0;
+/* every temporary light in the fight: a muzzle, a blast, an arming car. Flares keep their own
+   list because they live for seconds rather than frames. */
+var dynLights=[], booms=[], flares=[];
 /* what the fight leaves behind on the pavement */
 var marks=[];
 var mode='story', scrap=0, runKills=0, runShots=0, runHits=0, shake=0, tNow=0, dailySeed=0;
@@ -423,8 +545,9 @@ var TUT=[
   {t:8,   msg:'Keep moving. Standing still is how you die.'},
   {t:17,  msg:'The big button is your survivor skill.'},
   {t:27,  msg:'GRENADE clears a crowd. TRAP waits.'},
-  {t:38,  msg:'Shoot the cars. The blast takes the horde.'},
-  {t:50,  msg:'Scrap buys upgrades between sectors.'}
+  {t:38,  msg:'Shoot a car or a barrel. The alarm runs, then the street goes white.'},
+  {t:50,  msg:'1 2 3 on the centre rail swap weapons. F throws a flare.'},
+  {t:62,  msg:'Scrap buys upgrades between sectors.'}
 ];
 var tutOn=false, tutIdx=0, tutHide=null;
 function showTut(msg){
@@ -1269,6 +1392,19 @@ function finishWorld(){
     player.y=WATER+CELL/2;   /* start on the quay, looking at what is left of the boats */
     if(mazeGrid) mazeGrid.dy=WATER;   /* the road markings follow the streets inland */
   }
+  /* ---- loose loot: crates the living dropped, or the dead left where they fell ---- */
+  for(var lc=0;lc<4;lc++){
+    for(var lt0=0;lt0<40;lt0++){
+      var lx=rnd(140,world.w-140), ly=rnd(140,world.h-140);
+      if(inWall(lx,ly,26)) continue;
+      if(dist2(lx,ly,player.x,player.y)<210*210) continue;
+      var clash=false;
+      for(var lcc=0;lcc<chests.length;lcc++){ if(dist2(chests[lcc].x,chests[lcc].y,lx,ly)<150*150){ clash=true; break; } }
+      if(clash) continue;
+      chests.push({x:lx,y:ly,r:12,got:false,v:12+levelIndex*7,locked:false,crate:true});
+      break;
+    }
+  }
   var ct0=camTarget(); cam.x=ct0.x; cam.y=ct0.y;
   bakeWorld();
 }
@@ -1282,14 +1418,22 @@ function applyUpgrades(){
   player.max=Math.round(CH.hp*(1+u.hp*0.14));
   player.hp=player.max;
   player.speed=CH.speed*(1+u.spd*0.07);
-  player.dmg=CH.dmg*(1+u.dmg*0.12);
-  player.rate=CH.rate*(1+u.rate*0.09);
-  player.mag=Math.round(CH.mag+u.mag*3);
-  player.ammo=player.mag;
-  player.reloadTime=CH.reload;
+  player.armor=Math.min(0.45,(u.armor||0)*0.07);
   player.grenades=3+u.nade;
   player.traps=2+u.nade;
+  player.flares=2+Math.floor(u.nade*0.5);
   player.spCd=0;
+  /* every sector starts with full magazines and full reserves */
+  player.w=[];
+  for(var i=0;i<WEAPONS.length;i++){
+    var st=weaponStats(i), cap=reserveCap(i);
+    player.w.push({ammo:st.mag, mag:st.mag, reserve:cap});
+  }
+  player.wi=0; player.stat=weaponStats(0);
+  player.mag=player.stat.mag; player.ammo=player.mag;
+  player.reserve=player.w[0].reserve;
+  player.reloadTime=player.stat.reload;
+  player.dmg=player.stat.dmg; player.rate=player.stat.rate;
 }
 function startLevel(idx){
   levelIndex=idx; level=LEVELS[idx]; waveIndex=0; cleared=false;
@@ -1448,11 +1592,19 @@ function hurtZombie(z,dmg,srcx,srcy){
 /* ================== shooting ================== */
 function fire(ax,ay){
   if(player.reloading>0 || player.cd>0) return;
-  if(player.ammo<=0){ player.reloading=player.reloadTime; return; }
+  if(player.ammo<=0){
+    /* dry: reload if there is a reserve behind it, otherwise fall back to the sidearm */
+    if(player.reserve>0 || player.reserve===Infinity) player.reloading=player.reloadTime;
+    else swapWeapon(0);
+    return;
+  }
   var a=Math.atan2(ay-player.y,ax-player.x)+ (Math.random()-.5)*0.055;
-  var sp=680;
-  bullets.push({x:player.x+Math.cos(a)*16,y:player.y+Math.sin(a)*16,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
-    dmg:player.dmg,life:.85,r:3});
+  var sp=680, st=player.stat||weaponStats(player.wi);
+  for(var pl=0;pl<st.pellets;pl++){
+    var pa=a+(st.pellets>1?rnd(-st.spread,st.spread):0);
+    bullets.push({x:player.x+Math.cos(a)*16,y:player.y+Math.sin(a)*16,vx:Math.cos(pa)*sp,vy:Math.sin(pa)*sp,
+      dmg:st.dmg,life:.85,r:3});
+  }
   player.ammo--; player.cd=1/player.rate; runShots++;
   /* the shot is heard: everything within a street wakes up */
   for(var aw=0;aw<zombies.length;aw++){
@@ -1462,6 +1614,9 @@ function fire(ax,ay){
   shake=Math.min(shake+1.6,7);
   muzzleT=0.075;
   flashLight.t=0.10; flashLight.x=player.x+Math.cos(a)*24; flashLight.y=player.y+Math.sin(a)*24;
+  /* the muzzle is a real light and it cuts the dark, it does not just sit on top of it */
+  if(dynLights.length<8) dynLights.push({x:player.x+Math.cos(a)*22,y:player.y+Math.sin(a)*22,
+    r:150+70*(player.wi===2?1:0), t:0.10, dur:0.10, pw:0.9, c:'#ffd9a0'});
   /* the flash burns a little of itself off the muzzle as sparks */
   for(var mf=0;mf<3;mf++){
     var mfa=a+rnd(-0.5,0.5), mfs=rnd(80,240);
@@ -1504,7 +1659,8 @@ function placeMine(){
   hud();
 }
 function explode(x,y,radius,dmg,kind){
-  for(var i=0;i<26;i++){
+  var heavy=radius>=160;
+  for(var i=0;i<(heavy?38:26);i++){
     var a=R()*Math.PI*2, s=rnd(60,320);
     parts.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.25,.7),r:rnd(2,6),
       c:kind==='fire'?'#ff9f1c':'#ff6a3d',kind:'spark'});
@@ -1514,24 +1670,74 @@ function explode(x,y,radius,dmg,kind){
     if(zb.dead) continue;
     if(dist2(zb.x,zb.y,x,y)<radius*radius) hurtZombie(zb,dmg,x,y);
   }
-  if(player && dist2(player.x,player.y,x,y)<radius*radius*0.8 && player.shield<=0){
-    player.hp-=dmg*0.25;
+  /* splash falls off with distance and is capped per blast: a chain of burning cars should
+     cost you a bad decision, not the whole health bar in one second */
+  if(player && player.shield<=0){
+    var pd2=Math.sqrt(dist2(player.x,player.y,x,y));
+    if(pd2<radius*0.9){
+      var fall=1-pd2/(radius*0.9);
+      player.hp-=Math.min(28,dmg*0.25*fall)*(1-(player.armor||0));
+    }
   }
   for(var p=0;p<props.length;p++){
     var pr=props[p];
     if(pr.dead) continue;
     if(dist2(pr.x,pr.y,x,y)<(radius+20)*(radius+20)) damageProp(pr,dmg);
   }
-  shake=Math.min(shake+9,14);
+  shake=Math.min(shake+(heavy?16:9),18);
+  boomSnd(heavy?1:0.55);
+  /* ---- the blast is a light source, not a sprite: it opens a hole in the dark wide enough
+     to see the walls either side of the street, then closes over the next half second ---- */
+  if(dynLights.length<10) dynLights.push({x:x,y:y,r:radius*2.3,t:heavy?0.5:0.34,dur:heavy?0.5:0.34,
+    pw:heavy?1.25:0.85,c:'#ffd08a'});
+  booms.push({x:x,y:y,r:radius*0.35,t:0,dur:heavy?0.55:0.36,max:radius*2.2,heavy:heavy});
+  if(marks.length<36) marks.push({x:x,y:y,r:radius*0.34,a:0.5,rot:R()*6.28,kind:'scorch'});
+  /* and it pulls the horde in: a burning car is the loudest thing on the street */
+  var lureR=radius*3.6;
+  for(var lz=0;lz<zombies.length;lz++){
+    var zl2=zombies[lz];
+    if(zl2.dead) continue;
+    if(dist2(zl2.x,zl2.y,x,y)<lureR*lureR) zl2.lure={x:x,y:y,t:3.4};
+  }
+}
+/* a bullet does not blow a car up: it starts the clock. The alarm is the warning, the
+   flashing hull is the countdown, and the blast is worth standing back from. */
+function armProp(pr,secs){
+  if(pr.arm>0) return;
+  pr.armT=secs; pr.arm=secs; pr.beep=0; pr.hp=0;
+  if(dynLights.length<10) dynLights.push({x:pr.x,y:pr.y,r:130,t:0.16,dur:0.16,pw:0.8,c:'#ff5a3c'});
 }
 function damageProp(pr,dmg){
-  if(pr.dead || pr.hp===undefined) return;
+  if(pr.dead || pr.hp===undefined || pr.arm>0) return;
   pr.hp-=dmg;
-  if(pr.hp<=0){
-    pr.dead=true;
-    if(pr.kind==='car'){ explode(pr.x,pr.y,140,95,'fire'); }
-    else { explode(pr.x,pr.y,92,60,'fire'); }
+  if(pr.hp>0) return;
+  if(pr.kind==='car') armProp(pr,1.7);
+  else if(pr.kind==='barrel') armProp(pr,1.05);
+  else if(pr.kind==='crate'){ pr.dead=true; dropLoot(pr.x,pr.y); }
+  else { pr.dead=true; explode(pr.x,pr.y,92,60,'fire'); }
+}
+/* a crate on the pavement is a few rounds and a little scrap */
+function dropLoot(x,y){
+  pickups.push({x:x,y:y,r:10,kind:'scrap',v:6+Math.floor(R()*5),life:18});
+  parts.push({x:x,y:y,vx:0,vy:-20,life:.4,r:6,c:'#ffd166',kind:'dust'});
+}
+
+/* every light currently burning, in one list: the fade of a muzzle, the flash of a blast,
+   and any flare still on the asphalt. Both the dark-mask cut and the additive pass read it. */
+function activeLights(){
+  var out=[];
+  for(var i=0;i<dynLights.length && out.length<8;i++){
+    var L=dynLights[i];
+    if(L.t<=0) continue;
+    out.push({x:L.x,y:L.y,r:L.r,pw:L.pw||1,k:clamp(L.t/Math.max(0.001,L.dur),0,1)});
   }
+  for(var f=0;f<flares.length && out.length<9;f++){
+    var F=flares[f];
+    if(F.burn<=0) continue;
+    var k=Math.min(1,F.burn/2.4)*(0.86+0.14*Math.sin(tNow*15+f*2.1));
+    out.push({x:F.x,y:F.y,r:360*k,pw:1.15,k:0.92,flare:true});
+  }
+  return out;
 }
 
 /* ================== input ================== */
@@ -1548,6 +1754,7 @@ function stickDir(ox,oy,sx,sy){
 }
 /* where the camera wants its top-left corner: half the projected view, clamped to the map */
 cv.addEventListener('pointerdown',function(e){
+  ac();
   if(scene!=='play') return;
   cv.setPointerCapture(e.pointerId);
   var x=e.clientX, y=e.clientY;
@@ -1624,7 +1831,7 @@ function update(dt){
   }
   /* timers */
   if(player.cd>0) player.cd-=dt;
-  if(player.reloading>0){ player.reloading-=dt; if(player.reloading<=0){ player.ammo=player.mag; hud(); } }
+  if(player.reloading>0){ player.reloading-=dt; if(player.reloading<=0){ reloadNow(); hud(); } }
   if(player.inv>0) player.inv-=dt;
   if(player.shield>0) player.shield-=dt;
   if(player.spCd>0) player.spCd-=dt;
@@ -1654,15 +1861,17 @@ function update(dt){
   /* spike and fire patches */
   for(var hi=0;hi<hazards.length;hi++){
     var hz=hazards[hi]; hz.t=(hz.t||0)+dt;
-    if(dist2(player.x,player.y,hz.x,hz.y)<hz.r*hz.r && hz.t>1){ hz.t=0; player.hp-=7+levelIndex; }
+    if(dist2(player.x,player.y,hz.x,hz.y)<hz.r*hz.r && hz.t>1){ hz.t=0; player.hp-=(7+levelIndex)*(1-(player.armor||0)); }
   }
   /* caches */
   for(var ci=0;ci<chests.length;ci++){
     var che=chests[ci];
     if(che.got) continue;
     if(Math.sqrt(dist2(player.x,player.y,che.x,che.y))<30){
-      che.got=true; scrap+=che.v; player.ammo=player.mag;
-      showTut('CACHE · +'+che.v+' scrap, mag refilled'); hud();
+      che.got=true; scrap+=che.v;
+      if(che.crate){ refillAmmo(che.v); showTut('SUPPLY · +'+che.v+' scrap, ammo topped up'); }
+      else { player.ammo=player.mag; showTut('CACHE · +'+che.v+' scrap, mag refilled'); }
+      hud();
     }
   }
   /* spawn */
@@ -1692,6 +1901,45 @@ function update(dt){
     var lfs=0.9+0.1*Math.sin(tNow*2.3+L2.ph)+0.04*Math.sin(tNow*9.1+L2.ph);
     if(L2.st<L2.drop) lfs*=0.12+R()*0.3;
     L2.f=lfs;
+  }
+  /* ---- props on a fuse: a beep you can see, then the street goes white ---- */
+  for(var ap=props.length-1;ap>=0;ap--){
+    var pr=props[ap];
+    if(pr.dead || !(pr.arm>0)) continue;
+    pr.arm-=dt;
+    pr.beep=(pr.beep||0)-dt;
+    if(pr.beep<=0){
+      pr.beep=pr.arm>0.7?0.32:0.15;
+      beep(pr.arm>0.7?760:1180, 0.07, 0.05, 'square');
+      if(dynLights.length<10) dynLights.push({x:pr.x,y:pr.y,r:120,t:0.12,dur:0.12,pw:0.85,c:'#ff4a2a'});
+      for(var bz=0;bz<3;bz++) parts.push({x:pr.x+rnd(-10,10),y:pr.y+rnd(-8,8),vx:rnd(-40,40),
+        vy:rnd(-70,-10),life:rnd(.18,.34),r:1.6,c:'#ffb070',kind:'spark'});
+    }
+    if(pr.arm<=0){
+      pr.dead=true;
+      explode(pr.x,pr.y, pr.kind==='car'?230:175, pr.kind==='car'?185:140,'fire');
+    }
+  }
+  /* lights and blast rings age out on their own */
+  for(var dlA=dynLights.length-1;dlA>=0;dlA--){ dynLights[dlA].t-=dt; if(dynLights[dlA].t<=0) dynLights.splice(dlA,1); }
+  for(var bmA=booms.length-1;bmA>=0;bmA--){ booms[bmA].t+=dt; if(booms[bmA].t>=booms[bmA].dur) booms.splice(bmA,1); }
+  /* ---- thrown flares: they slide, they bounce off a wall, they burn for ten seconds ---- */
+  for(var flA=flares.length-1;flA>=0;flA--){
+    var F=flares[flA];
+    F.x+=F.vx*dt; F.y+=F.vy*dt; F.vx*=.90; F.vy*=.90;
+    if(inWall(F.x,F.y,4)){ F.x-=F.vx*dt*2.2; F.y-=F.vy*dt*2.2; F.vx*=-.35; F.vy*=-.35; }
+    F.t+=dt; F.burn-=dt;
+    if(F.burn<=0){ flares.splice(flA,1); continue; }
+    if(R()<0.55) parts.push({x:F.x+rnd(-4,4),y:F.y+rnd(-4,4),vx:rnd(-26,26),vy:rnd(-54,-8),
+      life:rnd(.2,.5),r:rnd(1,2.2),c:'#ffd27a',kind:'spark'});
+    if(R()<0.12) parts.push({x:F.x,y:F.y,vx:rnd(-10,10),vy:rnd(-30,-8),life:rnd(.7,1.4),r:rnd(3,6),
+      c:'#5f584e',kind:'dust'});
+    /* a burning stick is noise as well as light: it pulls a few in */
+    for(var flZ=0;flZ<zombies.length;flZ++){
+      var zf=zombies[flZ];
+      if(zf.dead) continue;
+      if(dist2(zf.x,zf.y,F.x,F.y)<230*230) zf.alert=Math.max(zf.alert||0,2);
+    }
   }
   if(muzzleT>0) muzzleT-=dt;
   if(flashLight.t>0) flashLight.t-=dt;
@@ -1741,6 +1989,10 @@ function update(dt){
       continue;
     }
     var d=Math.sqrt(dist2(z.x,z.y,player.x,player.y))||1;
+    /* a blast is a fire: for a few seconds it is the thing to walk toward, not you */
+    if(z.lure){ z.lure.t-=dt; if(z.lure.t<=0) z.lure=null; }
+    var tx=player.x, ty=player.y, td=d;
+    if(z.lure){ tx=z.lure.x; ty=z.lure.y; td=Math.sqrt(dist2(z.x,z.y,tx,ty))||1; }
     /* ---- three tiers, one brain between them ----
        2 ACTIVE   in the torch ring, in earshot of a shot, or close: full steering + separation
        1 DORMANT  heard something, still out of reach: steer four times a second, no separation
@@ -1776,8 +2028,8 @@ function update(dt){
           }
         }
       }
-      z.x+=(player.x-z.x)/d*spd*step + sx*spd*.55*step;
-      z.y+=(player.y-z.y)/d*spd*step + sy*spd*.55*step;
+      z.x+=(tx-z.x)/td*spd*step + sx*spd*.55*step;
+      z.y+=(ty-z.y)/td*spd*step + sy*spd*.55*step;
     }
     collideWalls(z);
     /* visibility, refreshed a few times a second: blocked by a block = silhouette, not a body */
@@ -1788,7 +2040,7 @@ function update(dt){
     /* hit player */
     if(d<z.r+player.r+2 && z.type!=='spit'){
       if(player.inv<=0 && player.shield<=0){
-        player.hp-=z.dmg; player.inv=.55; shake=10;
+        player.hp-=z.dmg*(1-(player.armor||0)); player.inv=.55; shake=10;
         parts.push({x:player.x,y:player.y,vx:rnd(-60,60),vy:rnd(-60,60),life:.4,r:3,c:'#c0261f',kind:'blood'});
         hud();
         if(player.hp<=0){ die(); return; }
@@ -1800,7 +2052,7 @@ function update(dt){
     var bb=bullets[eb];
     if(!bb.enemy) continue;
     if(dist2(bb.x,bb.y,player.x,player.y)<(player.r+bb.r)*(player.r+bb.r)){
-      if(player.inv<=0 && player.shield<=0){ player.hp-=6; player.inv=.4; hud(); }
+      if(player.inv<=0 && player.shield<=0){ player.hp-=6*(1-(player.armor||0)); player.inv=.4; hud(); }
       bullets.splice(eb,1);
     }
   }
@@ -2750,7 +3002,80 @@ function render(){
     dctx.lineTo(sB[0],sB[1]);
     dctx.closePath(); dctx.fill();
   }
+  /* every light in the fight is a hole in the dark, not a sticker on top of it: this is what
+     lets a muzzle flash, a car blast or a burning flare throw the walls of the street back */
+  var lt=activeLights();
+  if(lt.length){
+    dctx.globalCompositeOperation='destination-out';
+    for(var dl3=0;dl3<lt.length;dl3++){
+      var L3=lt[dl3];
+      var lq2=pj(L3.x,L3.y,6), lr3=L3.r*Z*L3.pw*0.62*L3.k;
+      if(lr3<10) continue;
+      var dg=dctx.createRadialGradient(lq2[0],lq2[1],2,lq2[0],lq2[1],lr3);
+      dg.addColorStop(0,'rgba(0,0,0,1)');
+      dg.addColorStop(0.48,'rgba(0,0,0,'+(0.72*L3.k).toFixed(3)+')');
+      dg.addColorStop(1,'rgba(0,0,0,0)');
+      dctx.fillStyle=dg; dctx.beginPath(); dctx.arc(lq2[0],lq2[1],lr3,0,6.284); dctx.fill();
+    }
+    dctx.globalCompositeOperation='source-over';
+  }
   ctx.drawImage(dark,0,0,W,H);
+  /* then the colour of that light, laid over the street it just revealed */
+  if(lt.length){
+    ctx.globalCompositeOperation='lighter';
+    for(var lg3=0;lg3<lt.length;lg3++){
+      var L4=lt[lg3];
+      var q4=pj(L4.x,L4.y,8), rr4=L4.r*Z*(0.92+0.08*Math.sin(tNow*26+lg3));
+      if(rr4<10) continue;
+      var a4=(L4.flare?0.40:0.46)*L4.k;
+      var g4=ctx.createRadialGradient(q4[0],q4[1],2,q4[0],q4[1],rr4);
+      g4.addColorStop(0,'rgba(255,246,214,'+a4.toFixed(3)+')');
+      g4.addColorStop(0.32,'rgba(255,178,96,'+(a4*0.5).toFixed(3)+')');
+      g4.addColorStop(1,'rgba(255,120,40,0)');
+      ctx.fillStyle=g4; ctx.beginPath(); ctx.arc(q4[0],q4[1],rr4,0,6.284); ctx.fill();
+    }
+    ctx.globalCompositeOperation='source-over';
+  }
+  /* the burning sticks themselves */
+  for(var fq2=0;fq2<flares.length;fq2++){
+    var F2=flares[fq2], fp2=pj(F2.x,F2.y,2), fs2=0.8+0.2*Math.sin(tNow*17+fq2);
+    var sc2=Math.max(0.7,Z);
+    ctx.fillStyle='rgba(255,186,96,'+(0.5+0.3*fs2).toFixed(3)+')';
+    ctx.beginPath(); ctx.arc(fp2[0],fp2[1],(4.6+2.2*fs2)*sc2,0,6.284); ctx.fill();
+    ctx.fillStyle='rgba(255,250,226,.95)';
+    ctx.beginPath(); ctx.arc(fp2[0],fp2[1],2.1*sc2,0,6.284); ctx.fill();
+  }
+  /* blast rings: a hoop that outruns the fire, and a white core for the first frames */
+  for(var bq=0;bq<booms.length;bq++){
+    var bm=booms[bq], bk=clamp(bm.t/bm.dur,0,1);
+    var bpj=pj(bm.x,bm.y,6), brj=(bm.r+(bm.max-bm.r)*Math.sqrt(bk))*Z;
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle='rgba(255,214,150,'+(0.8*(1-bk)).toFixed(3)+')';
+    ctx.lineWidth=Math.max(1,8*(1-bk));
+    ctx.beginPath(); ctx.arc(bpj[0],bpj[1],brj,0,6.284); ctx.stroke();
+    if(bk<0.32){
+      var ck=1-bk/0.32, cr=Math.max(8, bm.max*0.34*Z*(1-bk*1.5));
+      var cg2=ctx.createRadialGradient(bpj[0],bpj[1],1,bpj[0],bpj[1],cr);
+      cg2.addColorStop(0,'rgba(255,255,240,'+(0.9*ck).toFixed(3)+')');
+      cg2.addColorStop(0.5,'rgba(255,172,84,'+(0.5*ck).toFixed(3)+')');
+      cg2.addColorStop(1,'rgba(255,120,40,0)');
+      ctx.fillStyle=cg2; ctx.beginPath(); ctx.arc(bpj[0],bpj[1],cr,0,6.284); ctx.fill();
+    }
+    ctx.globalCompositeOperation='source-over';
+  }
+  /* a prop on the fuse: the ring closes as the blast arrives, so the warning needs no text */
+  for(var aq=0;aq<props.length;aq++){
+    var pq=props[aq];
+    if(pq.dead || !(pq.arm>0)) continue;
+    var qp=pj(pq.x,pq.y,10);
+    if(qp[0]<-90||qp[0]>W+90||qp[1]<-90||qp[1]>H+90) continue;
+    var kq=1-clamp(pq.arm/pq.armT,0,1), pulse=0.55+0.45*Math.sin(tNow*24);
+    var rq=(pq.kind==='car'?27:19)*Math.max(0.7,Z)*(1+kq*0.3);
+    ctx.strokeStyle='rgba(255,74,42,'+(0.30+0.55*pulse).toFixed(3)+')'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(qp[0],qp[1],rq,0,6.284); ctx.stroke();
+    ctx.strokeStyle='rgba(255,214,150,.9)'; ctx.lineWidth=2.6;
+    ctx.beginPath(); ctx.arc(qp[0],qp[1],rq,-1.5708,-1.5708+6.2832*(1-kq)); ctx.stroke();
+  }
   /* a shot is a light, not a decal: for a few frames the street jumps out of the dark */
   if(flashLight.t>0){
     var fk=clamp(flashLight.t/0.10,0,1);
@@ -2864,11 +3189,25 @@ function drawSticks(){
 /* ================== hud ================== */
 function hud(){
   if(!player) return;
+  var live=player.w&&player.w[player.wi];
+  if(live){ live.ammo=player.ammo; live.mag=player.mag; live.reserve=player.reserve; }
   var f=clamp(player.hp/player.max,0,1);
   $('hpFill').style.width=(f*100)+'%';
   $('hpNum').textContent=Math.max(0,Math.round(player.hp))+'/'+player.max;
   $('ammo').textContent=player.reloading>0?'—':player.ammo;
+  $('ammoS').textContent=WEAPONS[player.wi].name+(player.reserve===Infinity?'':' · '+player.reserve);
   $('scrap').textContent=scrap;
+  $('flareCnt').textContent=player.flares;
+  $('bFlare').classList.toggle('off',player.flares<=0);
+  /* the rail: the live one is bright, an empty one greys out, and the count is the reserve */
+  for(var wi=0;wi<WEAPONS.length;wi++){
+    var wb=$('wsl'+wi); if(!wb) continue;
+    var bank=player.w[wi];
+    var dry=(wi>0) && bank && bank.reserve<=0 && (wi!==player.wi || player.ammo<=0);
+    wb.className='wsl'+(wi===player.wi?' on':'')+(dry?' empty':'');
+    var cnt=wb.getElementsByTagName('i')[0];
+    if(cnt) cnt.textContent=(wi===0?'∞':(bank?bank.reserve:0));
+  }
   $('grenCnt').textContent=player.grenades;
   $('mineCnt').textContent=player.traps;
   $('waveT').textContent='WAVE '+Math.min(waveIndex,level.waves.length)+'/'+level.waves.length;
@@ -2878,6 +3217,28 @@ function hud(){
   $('bSpecial').classList.toggle('off',player.spCd>0);
   $('bGrenade').classList.toggle('off',player.grenades<=0);
   $('bMine').classList.toggle('off',player.traps<=0);
+}
+
+function throwFlare(){
+  if(!player || player.flares<=0) return;
+  player.flares--;
+  flares.push({x:player.x+Math.cos(player.aim)*18, y:player.y+Math.sin(player.aim)*18,
+    vx:Math.cos(player.aim)*340, vy:Math.sin(player.aim)*340, t:0, burn:13+R()*4});
+  beep(720,0.06,0.035,'triangle');
+  hud();
+}
+/* built once: three slots, in thumb reach, in the order the story hands them over */
+function buildWeaponRail(){
+  var host=$('wsel'); if(!host) return;
+  host.replaceChildren();
+  for(var i=0;i<WEAPONS.length;i++){
+    var b=document.createElement('button');
+    b.className='wsl'+(i===0?' on':''); b.id='wsl'+i; b.title=WEAPONS[i].name;
+    b.appendChild(el('b',null,WEAPONS[i].icon));
+    b.appendChild(el('i',null,i===0?'∞':(player&&player.w?player.w[i].reserve:0)));
+    (function(idx){ b.addEventListener('click',function(e){ e.preventDefault(); swapWeapon(idx); }); })(i);
+    host.appendChild(b);
+  }
 }
 
 /* ================== abilities ================== */
@@ -2959,7 +3320,9 @@ function openShop(){
     b.disabled=(lvl>=u.max||scrap<cost);
     b.addEventListener('click',function(){
       if(lvl>=u.max||scrap<cost) return;
-      scrap-=cost; save.up[u.k]=lvl+1; persist(); openShop(); hud();
+      scrap-=cost; save.up[u.k]=lvl+1; persist();
+      if(player) player.armor=Math.min(0.45,(save.up.armor||0)*0.07);
+      openShop(); hud();
     });
     row.appendChild(n); row.appendChild(b);
     host.appendChild(row);
@@ -3032,7 +3395,7 @@ $('ddMenu').addEventListener('click',function(){ refreshMenu(); scene='menu'; sh
 $('seBack').addEventListener('click',function(){ refreshMenu(); scene='menu'; show('s-menu'); });
 $('saBack').addEventListener('click',function(){ refreshMenu(); scene='menu'; show('s-menu'); });
 $('saReset').addEventListener('click',function(){
-  save={char:'rook',mode:save.mode,up:{dmg:0,rate:0,mag:0,hp:0,spd:0,nade:0},scrap:0,kills:0,deaths:0,shots:0,hits:0,levels:0,bestWave:0,daily:{},nadeBonus:0};
+  save={char:'rook',mode:save.mode,up:{dmg:0,rate:0,mag:0,hp:0,spd:0,nade:0,reload:0,armor:0,ammo:0},scrap:0,kills:0,deaths:0,shots:0,hits:0,levels:0,bestWave:0,daily:{},nadeBonus:0};
   persist(); openStats(); refreshMenu();
 });
 $('modeSeg').addEventListener('click',function(e){
@@ -3042,6 +3405,16 @@ $('modeSeg').addEventListener('click',function(e){
 $('bSpecial').addEventListener('click',special);
 $('bGrenade').addEventListener('click',throwNade);
 $('bMine').addEventListener('click',placeMine);
+$('bFlare').addEventListener('click',throwFlare);
+/* on a keyboard: 1-3 and Q swap, F throws a flare */
+window.addEventListener('keydown',function(e){
+  if(scene!=='play') return;
+  if(e.key==='1') swapWeapon(0);
+  else if(e.key==='2') swapWeapon(1);
+  else if(e.key==='3') swapWeapon(2);
+  else if(e.key==='f'||e.key==='F') throwFlare();
+  else if(e.key==='q'||e.key==='Q') swapWeapon((player.wi+1)%WEAPONS.length);
+});
 $('pause').addEventListener('click',function(){
   if(scene!=='play') return;
   scene='paused';
@@ -3139,6 +3512,7 @@ resize();
 loadSave();
 pointerMode=save.mode;
 buildChars();
+buildWeaponRail();
 refreshMenu();
 syncSetup();
 show('s-menu');
@@ -3171,7 +3545,9 @@ window.__dn={
   grant:function(n){ scrap+=n; hud(); },
   buy:function(k){ var u=UPS.find(function(x){return x.k===k;}); if(!u) return false;
     var lvl=save.up[k]||0; if(lvl>=u.max) return false; var c=u.cost(lvl);
-    if(scrap<c) return false; scrap-=c; save.up[k]=lvl+1; persist(); return true; },
+    if(scrap<c) return false; scrap-=c; save.up[k]=lvl+1; persist();
+    if(player) player.armor=Math.min(0.45,(save.up.armor||0)*0.07);
+    return true; },
   openShop:openShop, finish:finishLevel,
   cars:function(){ return props.filter(function(p){return p.kind==='car' && !p.dead;}).map(function(p){return {x:p.x,y:p.y,hp:p.hp};}); },
   explodeAt:function(x,y){ explode(x,y,140,95,'fire'); },
@@ -3189,7 +3565,26 @@ window.__dn={
   queue:function(){ return waveQueue.slice(); },
   clearWave:function(){ waveQueue=[]; zombies.length=0; },
   char:function(id){ save.char=id; applyUpgrades(); },
-  los:function(x1,y1,x2,y2){ return los(x1,y1,x2,y2); }
+  los:function(x1,y1,x2,y2){ return los(x1,y1,x2,y2); },
+  weapons:function(){ return {i:player?player.wi:0, list:WEAPONS.map(function(w,i){
+    var b=player?player.w[i]:{mag:0,ammo:0,reserve:0};
+    return {id:w.id,name:w.name,mag:b.mag,ammo:b.ammo,reserve:b.reserve}; })}; },
+  swap:function(i){ return swapWeapon(i); },
+  flare:throwFlare,
+  shootAt:function(x,y){ if(player){ player.cd=0; fire(x,y); } },
+  arms:function(){ return props.filter(function(p){ return p.arm>0; }).map(function(p){
+    return {kind:p.kind,arm:+p.arm.toFixed(2),x:Math.round(p.x),y:Math.round(p.y)}; }); },
+  barrels:function(){ return props.filter(function(p){ return p.kind==='barrel'&&!p.dead; })
+    .map(function(p){ return {x:Math.round(p.x),y:Math.round(p.y),hp:p.hp}; }); },
+  crates:function(){ return chests.filter(function(c){ return c.crate; })
+    .map(function(c){ return {x:Math.round(c.x),y:Math.round(c.y),got:c.got}; }); },
+  flares:function(){ return flares.map(function(f){ return {x:Math.round(f.x),y:Math.round(f.y),burn:+f.burn.toFixed(1)}; }); },
+  lightsOn:function(){ return activeLights().length; },
+  booms:function(){ return booms.length; },
+  lured:function(){ return zombies.filter(function(z){ return !!z.lure; }).length; },
+  reserve:function(){ return player?player.reserve:0; },
+  armor:function(){ return player?player.armor:0; },
+  pickups:function(){ return pickups.map(function(p){ return {x:Math.round(p.x),y:Math.round(p.y),v:p.v}; }); }
 };
 })();
 </script>
