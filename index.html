@@ -19,14 +19,20 @@
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   font:400 15px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 #cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#0b0b0d}
+/* the frame vignette is a static layer: the compositor owns it and it costs the loop nothing */
+#vig{position:fixed;inset:0;pointer-events:none;z-index:2;
+  background:radial-gradient(ellipse 78% 82% at 50% 52%,
+    rgba(0,0,0,0) 30%, rgba(0,0,0,.26) 62%, rgba(0,0,0,.62) 100%)}
 /* ---------- HUD ---------- */
 #hud{position:fixed;inset:0;pointer-events:none;display:none;z-index:3;
   padding:calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 12px)}
 #hud.on{display:block}
 .hpRow{position:absolute;top:calc(env(safe-area-inset-top) + 2px);left:calc(env(safe-area-inset-left) + 44px);
   display:flex;align-items:center;gap:6px;width:38vw;max-width:200px}
-.hpBar{flex:1;height:9px;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:rgba(0,0,0,.62)}
-.hpFill{height:100%;width:100%;background:linear-gradient(90deg,#8f1d18,#e0402f);transition:width .12s linear}
+.hpBar{flex:1;height:6px;border:0;border-radius:4px;overflow:hidden;background:rgba(0,0,0,.42);
+  box-shadow:inset 0 0 0 1px rgba(232,223,201,.08)}
+.hpFill{height:100%;width:100%;background:linear-gradient(90deg,#7c1814,#d93a29);transition:width .12s linear;
+  box-shadow:0 0 8px rgba(224,64,47,.45)}
 .hpNum{font:800 10px/1 ui-monospace,monospace;color:var(--bone);min-width:26px;text-align:left}
 .topMid{position:absolute;top:calc(env(safe-area-inset-top) + 4px);left:50%;transform:translateX(-50%);text-align:center}
 .waveT{font:800 12px/1.2 ui-monospace,monospace;letter-spacing:.12em;color:var(--bone)}
@@ -35,7 +41,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .scrap{font:800 14px/1 ui-monospace,monospace;color:#ffd166}
 .scrapS{font:600 9px/1.4 ui-monospace,monospace;color:var(--dim);letter-spacing:.1em}
 .ammo{position:absolute;right:calc(env(safe-area-inset-right) + 12px);top:calc(env(safe-area-inset-top) + 40px);
-  font:800 16px/1 ui-monospace,monospace;color:var(--bone);text-align:right}
+  font:800 16px/1 ui-monospace,monospace;color:rgba(232,223,201,.86);text-align:right;
+  opacity:.85;text-shadow:0 1px 6px rgba(0,0,0,.8)}
 .ammo small{font-size:9px;color:var(--dim);display:block;letter-spacing:.1em}
 /* buttons */
 /* corner furniture: the two thumbs own the bottom corners, so the abilities live there and the
@@ -44,10 +51,15 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 #bSpecial{left:calc(env(safe-area-inset-left) + 2px);bottom:calc(env(safe-area-inset-bottom) + 4px)}
 #bGrenade{right:calc(env(safe-area-inset-right) + 2px);bottom:calc(env(safe-area-inset-bottom) + 86px)}
 #bMine{right:calc(env(safe-area-inset-right) + 2px);bottom:calc(env(safe-area-inset-bottom) + 4px)}
-.gbtn{position:absolute;pointer-events:auto;width:72px;height:72px;border-radius:50%;border:1px solid rgba(232,223,201,.28);
-  background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.14),rgba(0,0,0,.5));
-  color:var(--bone);font:800 10px/1.1 ui-monospace,monospace;letter-spacing:.06em;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.gbtn{position:absolute;pointer-events:auto;width:66px;height:66px;border-radius:50%;
+  border:1px solid rgba(232,223,201,.13);
+  background:radial-gradient(circle at 36% 30%,rgba(255,255,255,.09),rgba(6,7,9,.26) 72%);
+  color:rgba(239,233,220,.8);font:800 9.5px/1.1 ui-monospace,monospace;letter-spacing:.1em;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  box-shadow:0 2px 12px rgba(0,0,0,.42),inset 0 0 0 1px rgba(255,255,255,.03);
+  transition:opacity .18s,transform .12s,background .18s;opacity:.72}
+.gbtn:active{transform:scale(.94);opacity:.98;
+  background:radial-gradient(circle at 36% 30%,rgba(192,38,31,.46),rgba(6,7,9,.3) 72%)}
 .gbtn.md{width:60px;height:60px;font-size:9px;gap:2px}
 .gbtn.sm{width:54px;height:54px;font-size:8.5px;gap:1px;opacity:.92}
 .gbtn.md b{font-size:14px}.gbtn.sm b{font-size:12px}
@@ -74,8 +86,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   .gbtn .cnt,.gbtn.md .cnt,.gbtn.sm .cnt{font-size:8px}
 }
 #pause{position:absolute;left:calc(env(safe-area-inset-left) + 0px);top:calc(env(safe-area-inset-top) + 0px);
-  width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.45);
-  color:var(--bone);font:800 15px/1 ui-monospace,monospace;pointer-events:auto}
+  width:32px;height:32px;border-radius:9px;border:1px solid rgba(232,223,201,.12);background:rgba(0,0,0,.28);
+  color:rgba(232,223,201,.7);font:800 13px/1 ui-monospace,monospace;pointer-events:auto;opacity:.75}
 #tut{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 70px);transform:translateX(-50%)
   translateY(-6px);max-width:92vw;background:rgba(14,12,10,.88);border:1px solid rgba(232,223,201,.18);
   border-radius:20px;padding:7px 12px;font:700 11.5px/1.35 ui-sans-serif;color:#f3ecdc;text-align:center;
@@ -155,6 +167,7 @@ p{margin:0 0 10px;color:var(--dim);font-size:13px}
 </head>
 <body>
 <canvas id="cv"></canvas>
+<div id="vig" aria-hidden="true"></div>
 <button class="pfs" id="fsBtn" aria-label="fullscreen">&#9974;</button>
 <div id="rot"><div class="ph"></div><span>TURN SIDEWAYS &mdash; LANDSCAPE</span>
 <button id="rotGo" aria-label="dismiss">&#10005;</button></div>
@@ -398,6 +411,12 @@ var fires=[], WATER=230;      /* harbour water band, and the fires burning on it
 var mazeGrid=null;            /* the street grid of the current level, for road markings and kerbs */
 var solids=[], lamps=[];      /* wrecked vehicles that block the street, and the lights over it */
 var level=null, levelIndex=0, waveIndex=0, waveQueue=[], spawnTimer=0, cleared=false;
+/* hordes arrive as squads off the edge of the frame, not one at a time */
+var squadPack=0;
+/* a gunshot is a light: it lifts the street for a few frames instead of only decalling it */
+var flashLight={t:0,x:0,y:0}, muzzleT=0;
+/* what the fight leaves behind on the pavement */
+var marks=[];
 var mode='story', scrap=0, runKills=0, runShots=0, runHits=0, shake=0, tNow=0, dailySeed=0;
 var TUT=[
   {t:.8,  msg:'Left thumb moves. Right thumb aims and fires.'},
@@ -1229,19 +1248,84 @@ var ZT={
   spit: {hp:40,speed:56,dmg:0,r:12,score:3,color:'#a3ae62'},
   boss: {hp:900,speed:46,dmg:26,r:30,score:50,color:'#8d3b2c'}
 };
-function spawnZombie(type){
+/* an entry point just off the frame: the horde comes from the edges of what you can see */
+function spawnAnchor(){
+  for(var i=0;i<26;i++){
+    var a=R()*6.283, d=rnd(420,780);
+    var x=clamp(cam.x+Math.cos(a)*d,50,world.w-50);
+    var y=clamp(cam.y+Math.sin(a)*d,50,world.h-50);
+    if(inWall(x,y,26)) continue;
+    var sp2=pj(x,y,0);
+    if(sp2[0]>-16 && sp2[0]<W+16 && sp2[1]>-16 && sp2[1]<H+16) continue;   /* must be off screen */
+    if(dist2(x,y,player.x,player.y)<360*360) continue;
+    return {x:x,y:y};
+  }
+  return null;
+}
+/* the nearest small obstacle a squad can come over instead of walking around */
+function nearObstacle(x,y,rad){
+  var best=null, bd=rad*rad;
+  /* a wreck, a barrel, a heap of rubble: the things a body can haul itself over. A building
+     is not one of them, so only genuinely small boxes qualify. */
+  for(var i=0;i<props.length;i++){
+    var pr=props[i];
+    if(pr.dead) continue;
+    if(pr.kind!=='car'&&pr.kind!=='heap'&&pr.kind!=='barrel') continue;
+    var hw=pr.kind==='car'?40:18, hh=pr.kind==='car'?22:18;
+    var d0=dist2(pr.x,pr.y,x,y);
+    if(d0<bd){
+      bd=d0;
+      best={x:pr.x-hw, y:pr.y-hh, w:hw*2, h:hh*2};
+    }
+  }
+  for(var j=0;j<walls.length;j++){
+    var w=walls[j];
+    if(w.kind==='edge') continue;
+    var size=Math.max(w.w,w.h);
+    if(size>150 || size<24) continue;
+    var d=dist2(w.x+w.w*0.5,w.y+w.h*0.5,x,y);
+    if(d<bd){ bd=d; best=w; }
+  }
+  return best;
+}
+function spawnZombie(type, anchor){
   var t=ZT[type]||ZT.walker;
   var tries=0, x=0, y=0;
-  /* spawn on a ring just outside the torch, so the wave actually arrives */
-  do{
-    var sa=R()*6.284, sd=rnd(380,640);
-    x=clamp(player.x+Math.cos(sa)*sd,60,world.w-60);
-    y=clamp(player.y+Math.sin(sa)*sd,60,world.h-60);
-    tries++;
-  } while(tries<80 && (dist2(x,y,player.x,player.y)<300*300 || inWall(x,y,20) || !los(x,y,player.x,player.y)));
+  if(anchor){
+    /* the squad shares a doorway: a couple of steps of scatter, same entry point */
+    for(tries=0;tries<40;tries++){
+      var aa=R()*6.283, rr=14+R()*44;
+      x=clamp(anchor.x+Math.cos(aa)*rr,60,world.w-60);
+      y=clamp(anchor.y+Math.sin(aa)*rr,60,world.h-60);
+      if(!inWall(x,y,14) && dist2(x,y,player.x,player.y)>330*330) break;
+    }
+  } else {
+    /* spawn on a ring just outside the torch, so the wave actually arrives */
+    do{
+      var sa=R()*6.284, sd=rnd(380,640);
+      x=clamp(player.x+Math.cos(sa)*sd,60,world.w-60);
+      y=clamp(player.y+Math.sin(sa)*sd,60,world.h-60);
+      tries++;
+    } while(tries<80 && (dist2(x,y,player.x,player.y)<300*300 || inWall(x,y,20) || !los(x,y,player.x,player.y)));
+  }
   var hpScale=(type==='boss')?(1+levelIndex*0.35):1;
-  zombies.push({x:x,y:y,type:type,hp:t.hp*hpScale,max:t.hp*hpScale,speed:t.speed*(0.9+R()*.25),dmg:t.dmg,r:t.r,
-    color:t.color,cd:R(),stun:0,wob:R()*6,dead:false,score:t.score});
+  var z={x:x,y:y,type:type,hp:t.hp*hpScale,max:t.hp*hpScale,speed:t.speed*(0.9+R()*.25),dmg:t.dmg,r:t.r,
+    color:t.color,cd:R(),stun:0,wob:R()*6,dead:false,score:t.score,alert:6};
+  /* a third of them climb the barricade or the hull in their way, hands first */
+  if(type!=='boss' && R()<0.34){
+    var obs=nearObstacle(x,y,150);
+    if(obs){
+      var cx=obs.x+obs.w*0.5, cy=obs.y+obs.h*0.5;
+      var nx=x-cx, ny=y-cy, nl=Math.sqrt(nx*nx+ny*ny)||1;
+      var far=Math.max(obs.w,obs.h)*0.5+24;
+      if(!inWall(cx-nx/nl*far, cy-ny/nl*far, 6)){
+        z.vault={x0:cx+nx/nl*far, y0:cy+ny/nl*far, x1:cx-nx/nl*far, y1:cy-ny/nl*far, t:0, dur:0.55+R()*0.3};
+        z.x=z.vault.x0; z.y=z.vault.y0;
+      }
+    }
+  }
+  zombies.push(z);
+  return z;
 }
 function inWall(x,y,pad){
   pad=pad||0;
@@ -1259,15 +1343,24 @@ function hurtZombie(z,dmg,srcx,srcy){
   if(z.dead) return;
   z.hp-=dmg; runHits++;
   z.alert=9;                       /* being shot promotes it to an active brain */
+  /* blood leaves in the direction the round was travelling, in a cone */
   var a=Math.atan2(z.y-srcy,z.x-srcx);
-  for(var i=0;i<3;i++) parts.push({x:z.x,y:z.y,vx:Math.cos(a)*rnd(20,90),vy:Math.sin(a)*rnd(20,90),
-    life:.35,r:rnd(1.5,3),c:'#8f1d18',kind:'blood'});
+  for(var i=0;i<5;i++){
+    var ba=a+rnd(-0.5,0.5), bs=rnd(50,210);
+    parts.push({x:z.x,y:z.y,vx:Math.cos(ba)*bs,vy:Math.sin(ba)*bs,
+      life:rnd(.25,.5),r:rnd(1.4,3.2),c:R()<0.35?'#6d1410':'#a5221a',kind:'blood'});
+  }
   if(z.hp<=0){
     z.dead=true; runKills++; save.kills++;
     var gain=(z.score||1)+(save.char==='vex'?1:0);
     scrap+=gain;
     pickups.push({x:z.x,y:z.y,r:9,kind:'scrap',v:Math.min(gain,3),life:14});
-    for(var j=0;j<8;j++) parts.push({x:z.x,y:z.y,vx:rnd(-140,140),vy:rnd(-140,140),life:.5,r:rnd(2,4),c:'#8f1d18',kind:'blood'});
+    for(var j=0;j<10;j++){
+      var ja=a+rnd(-1.1,1.1), js=rnd(40,300);
+      parts.push({x:z.x,y:z.y,vx:Math.cos(ja)*js,vy:Math.sin(ja)*js,life:rnd(.35,.7),
+        r:rnd(1.8,4),c:R()<0.3?'#5a100d':'#8f1d18',kind:'blood'});
+    }
+    if(marks.length<36) marks.push({x:z.x,y:z.y,r:z.r*rnd(0.9,1.5),a:0.40,rot:rnd(0,6.28),kind:'blood'});
     hud();
   }
 }
@@ -1287,8 +1380,36 @@ function fire(ax,ay){
     if(!zA.dead && dist2(zA.x,zA.y,player.x,player.y)<620*620) zA.alert=Math.max(zA.alert||0,4);
   }
   shake=Math.min(shake+1.6,7);
-  parts.push({x:player.x+Math.cos(a)*18,y:player.y+Math.sin(a)*18,vx:Math.cos(a)*30,vy:Math.sin(a)*30,life:.1,r:5,c:'#ffd166',kind:'flash'});
+  muzzleT=0.075;
+  flashLight.t=0.10; flashLight.x=player.x+Math.cos(a)*24; flashLight.y=player.y+Math.sin(a)*24;
+  /* the flash burns a little of itself off the muzzle as sparks */
+  for(var mf=0;mf<3;mf++){
+    var mfa=a+rnd(-0.5,0.5), mfs=rnd(80,240);
+    parts.push({x:player.x+Math.cos(a)*20,y:player.y+Math.sin(a)*20,
+      vx:Math.cos(mfa)*mfs,vy:Math.sin(mfa)*mfs,life:rnd(.06,.14),r:rnd(1,2.2),c:'#ffe6a8',kind:'spark'});
+  }
   hud();
+}
+/* sparks, dust and a chip in the surface where a round stopped */
+function impact(x,y,vx,vy,flesh){
+  var back=Math.atan2(-vy,-vx), sp=Math.sqrt(vx*vx+vy*vy)||1;
+  if(flesh){
+    for(var b=0;b<4;b++){
+      var ba=back+rnd(-0.6,0.6), bs=rnd(40,150);
+      parts.push({x:x,y:y,vx:Math.cos(ba)*bs,vy:Math.sin(ba)*bs,life:rnd(.2,.45),r:rnd(1.4,2.8),
+        c:R()<0.4?'#6d1410':'#a5221a',kind:'blood'});
+    }
+    return;
+  }
+  for(var i=0;i<5;i++){
+    var aa=back+rnd(-0.9,0.9), s2=rnd(70,260);
+    parts.push({x:x,y:y,vx:Math.cos(aa)*s2,vy:Math.sin(aa)*s2,life:rnd(.1,.24),r:rnd(1,2.4),
+      c:R()<0.55?'#ffd9a0':'#ff9f5a',kind:'spark'});
+  }
+  for(var d2=0;d2<3;d2++){
+    parts.push({x:x,y:y,vx:rnd(-46,46),vy:rnd(-46,46),life:rnd(.25,.55),r:rnd(2,4.2),c:'#8a8578',kind:'dust'});
+  }
+  if(marks.length<36) marks.push({x:x,y:y,r:rnd(2.6,5),a:0.5,rot:rnd(0,6.28),kind:'chip'});
 }
 function throwNade(){
   if(player.grenades<=0) return;
@@ -1467,16 +1588,38 @@ function update(dt){
   /* spawn */
   if(waveQueue.length){
     spawnTimer-=dt;
-    if(spawnTimer<=0 && zombies.length<26){
-      spawnZombie(waveQueue.shift());
-      spawnTimer=Math.max(.12, 1.05-waveIndex*0.08);
+    if(spawnTimer<=0 && zombies.length<28){
+      /* a wave is a handful of squads, not a queue of singles: they arrive together, from
+         off the frame, and every so often a big swarm so the pressure jumps instead of creeping */
+      var anchor=spawnAnchor();
+      var pack=2+Math.floor(R()*(2+Math.min(3,waveIndex)));
+      if(R()<0.30) pack=6+Math.floor(R()*4);
+      pack=Math.max(1,Math.min(pack,waveQueue.length,28-zombies.length));
+      for(var sq=0;sq<pack;sq++) spawnZombie(waveQueue.shift(), anchor);
+      squadPack=pack;
+      spawnTimer=Math.max(.8, 2.4-waveIndex*0.10)-R()*0.45;
     }
   }
+  /* lamp health: a steady drone with an occasional brownout */
+  for(var lf2=0;lf2<lamps.length;lf2++){
+    var L2=lamps[lf2];
+    if(L2.ph===undefined){ L2.ph=Math.random()*6.28; L2.st=Math.random()*6; L2.drop=0; }
+    L2.st-=dt;
+    if(L2.st<=0){
+      L2.st=1.4+R()*9;
+      L2.drop=R()<0.5?(0.10+R()*0.22):0;
+    }
+    var lfs=0.9+0.1*Math.sin(tNow*2.3+L2.ph)+0.04*Math.sin(tNow*9.1+L2.ph);
+    if(L2.st<L2.drop) lfs*=0.12+R()*0.3;
+    L2.f=lfs;
+  }
+  if(muzzleT>0) muzzleT-=dt;
+  if(flashLight.t>0) flashLight.t-=dt;
   /* bullets */
   for(var i=bullets.length-1;i>=0;i--){
     var b=bullets[i];
     b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt;
-    var hit=false;
+    var hit=false, hx=b.x, hy=b.y, flesh=false;
     for(var w=0;w<walls.length;w++){
       var wl=walls[w];
       if(b.x>wl.x&&b.x<wl.x+wl.w&&b.y>wl.y&&b.y<wl.y+wl.h){ hit=true; break; }
@@ -1493,10 +1636,11 @@ function update(dt){
         var zb=zombies[z];
         if(zb.dead) continue;
         if(dist2(b.x,b.y,zb.x,zb.y)<(zb.r+b.r)*(zb.r+b.r)){
-          hurtZombie(zb,b.dmg,b.x-b.vx*0.02,b.y-b.vy*0.02); hit=true; break;
+          hurtZombie(zb,b.dmg,b.x-b.vx*0.02,b.y-b.vy*0.02); hit=true; hx=b.x; hy=b.y; flesh=true; break;
         }
       }
     }
+    if(hit) impact(hx,hy,b.vx,b.vy,flesh);
     if(hit||b.life<=0) bullets.splice(i,1);
   }
   /* zombies */
@@ -1506,6 +1650,16 @@ function update(dt){
     z.wob+=dt*4;
     if(z.stun>0) z.stun-=dt;
     if(z.alert>0) z.alert-=dt;
+    /* coming over a barricade: no steering and no collision until the far side is underfoot */
+    if(z.vault){
+      var vq=z.vault; vq.t+=dt;
+      var vk=Math.min(1, vq.t/vq.dur), ve=vk*vk*(3-2*vk);
+      z.x=vq.x0+(vq.x1-vq.x0)*ve; z.y=vq.y0+(vq.y1-vq.y0)*ve;
+      z.hop=Math.sin(Math.PI*vk)*(z.r*2.2);
+      z.wob+=dt*7;
+      if(vk>=1){ z.vault=null; z.hop=0; }
+      continue;
+    }
     var d=Math.sqrt(dist2(z.x,z.y,player.x,player.y))||1;
     /* ---- three tiers, one brain between them ----
        2 ACTIVE   in the torch ring, in earshot of a shot, or close: full steering + separation
@@ -1994,7 +2148,33 @@ function drawLogjam(w){
 function drawSolid(o){
   var long=o.w>=o.h;
   var H=o.kind==='trailer'?96:o.kind==='bus'?92:o.kind==='cont'?86:o.kind==='ambo'?70:48;
-  box3d(o.x, o.y, o.w, o.h, 0, H, shade(o.body,1.18), shade(o.body,0.6), shade(o.body,0.42));
+  /* from this height the roof is most of what a hull is, so it keeps the body tone instead of
+     blowing out to white, and it gets ribs and a hatch so it never reads as a blank card */
+  box3d(o.x, o.y, o.w, o.h, 0, H, shade(o.body,0.9), shade(o.body,0.58), shade(o.body,0.4));
+  (function roof(){
+    var r1=pj(o.x+3,o.y+3,H), r2=pj(o.x+o.w-3,o.y+3,H),
+        r3=pj(o.x+o.w-3,o.y+o.h-3,H), r4=pj(o.x+3,o.y+o.h-3,H);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    ctx.fillStyle='rgba(0,0,0,.13)';
+    ctx.beginPath(); ctx.moveTo(r1[0],r1[1]); ctx.lineTo(r2[0],r2[1]);
+    ctx.lineTo(r3[0],r3[1]); ctx.lineTo(r4[0],r4[1]); ctx.closePath(); ctx.fill();
+    var ribs=long?Math.max(3,Math.floor(o.w/30)):Math.max(2,Math.floor(o.h/30));
+    for(var q=1;q<ribs;q++){
+      var t=q/ribs;
+      var s1=long?pj(o.x+o.w*t,o.y+5,H):pj(o.x+5,o.y+o.h*t,H);
+      var s2=long?pj(o.x+o.w*t,o.y+o.h-5,H):pj(o.x+o.w-5,o.y+o.h*t,H);
+      ctx.strokeStyle='rgba(0,0,0,.17)'; ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.moveTo(s1[0],s1[1]); ctx.lineTo(s2[0],s2[1]); ctx.stroke();
+    }
+    /* hatch, offset so it is obviously a roof and not a lid */
+    var h1=pj(o.x+o.w*0.34,o.y+o.h*0.34,H), h2=pj(o.x+o.w*0.62,o.y+o.h*0.34,H),
+        h3=pj(o.x+o.w*0.62,o.y+o.h*0.62,H), h4=pj(o.x+o.w*0.34,o.y+o.h*0.62,H);
+    ctx.fillStyle='rgba(0,0,0,.22)';
+    ctx.beginPath(); ctx.moveTo(h1[0],h1[1]); ctx.lineTo(h2[0],h2[1]);
+    ctx.lineTo(h3[0],h3[1]); ctx.lineTo(h4[0],h4[1]); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.moveTo(h1[0],h1[1]); ctx.lineTo(h2[0],h2[1]); ctx.stroke();
+  })();
   /* panel ribs down the flank */
   var ribs=long?Math.floor(o.w/14):Math.floor(o.h/14);
   for(var i=0;i<ribs;i++){
@@ -2017,8 +2197,11 @@ function drawSolid(o){
   }
 }
 function drawLamp(lp){
+  var f=(lp.f==null?1:lp.f);
   box3d(lp.x-2, lp.y-2, 4, 4, 0, 150, '#31353b', '#1e2126', false);
-  box3d(lp.x-10, lp.y-5, 20, 10, 150, 158, '#ffd9a0', '#b99668', '#8f7448');
+  /* the bulb browns out with the pool under it */
+  box3d(lp.x-10, lp.y-5, 20, 10, 150, 158,
+    f>0.55?'#ffd9a0':shade('#ffd9a0',0.35+0.5*f), shade('#b99668',0.35+0.5*f), shade('#8f7448',0.3+0.55*f));
 }
 
 /* ---------------- props ---------------- */
@@ -2083,6 +2266,8 @@ function drawGateBox(g2){
 
 /* ---------------- the living and the dead ---------------- */
 function drawZombieBody(zb){
+  /* mid-climb: drawn lifted off the ground, then put back so state stays honest */
+  if(zb.hop>0){ zb.__hop=zb.hop; zb.y-=zb.hop; }
   var bang=Math.atan2(player.y-zb.y,player.x-zb.x);
   var R=zb.r*0.52, H=zb.r*4.2, dark=shade(zb.color,0.4);
   capsule(zb.x, zb.y, R, R*0.8, H, zb.color, dark, shade(zb.color,0.62));
@@ -2123,6 +2308,7 @@ function drawZombieBody(zb){
     ctx.strokeStyle='rgba(255,75,62,.5)'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.ellipse(gr[0],gr[1],22,13,0,0,6.284); ctx.stroke();
   }
+  if(zb.__hop){ zb.y+=zb.__hop; zb.__hop=0; }
 }
 function drawSurvivor(pa){
   var R=pa.r, ek=CH.look, H=R*3.6;
@@ -2247,6 +2433,34 @@ function render(){
   SHX=sh; SHY=sv;
   /* the street converges with depth, so it is drawn in bands rather than one flat blit */
   drawGroundBands();
+  /* what the fight has already left here: splatter and chips, under every foot.
+     Batched into one path per surface, so a street full of marks costs two fills. */
+  if(marks.length){
+    for(var mpass=0;mpass<2;mpass++){
+      var wantBlood=(mpass===0);
+      var opened=false;
+      for(var mk=0;mk<marks.length;mk++){
+        var m0=marks[mk];
+        if((m0.kind==='blood')!==wantBlood) continue;
+        var mdy=m0.y-cam.y+CAM_BACK, mD=mdy*COS_T+CAM_H*SIN_T; if(mD<24) mD=24;
+        var mV=mdy*SIN_T-CAM_H*COS_T;
+        var ma=FOCAL/mD, mx=W/2+FOCAL*(m0.x-cam.x)/mD+SHX, my=H/2-FOCAL*mV/mD+SHY;
+        if(mx<-60||mx>W+60||my<-60||my>H+60) continue;
+        var msy=Math.abs(-(SIN_T*mD-mV*COS_T)/(mD*mD))/ma;
+        if(!(msy>0.08)) msy=0.45;
+        var mr=wantBlood?m0.r:m0.r*0.7;
+        if(!opened){ ctx.beginPath(); opened=true; }
+        ctx.moveTo(mx+mr*ma, my);
+        ctx.ellipse(mx,my,mr*ma,mr*ma*msy,m0.rot,0,6.284);
+      }
+      if(opened){
+        ctx.globalAlpha=wantBlood?0.42:0.5;
+        ctx.fillStyle=wantBlood?'#5a100d':'#191611';
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
   /* flames, drawn where they burn so they sort under everything standing nearby */
   for(var fl0=0;fl0<fires.length;fl0++){
     var fo=fires[fl0], fo2=0.8+0.2*Math.sin(tNow*9+fl0*1.7);
@@ -2397,13 +2611,15 @@ function render(){
   var pj0=pj(player.x,player.y,0), px=pj0[0], py=pj0[1];
   var amb=(level.amb!=null)?level.amb:(level.theme==='forest'?0.62:0.36);
   if(level.sky){ var skyP=clamp(waveIndex/Math.max(1,level.waves.length),0,1); amb=level.sky[0]+(level.sky[1]-level.sky[0])*skyP; }
+  /* the street outside the beam is meant to be genuinely black: contrast is the whole look */
+  amb=Math.min(0.94, amb*1.26);
   var reveal=level.reveal||290;
   if(!window.__nolit){
   dctx.clearRect(0,0,W,H);
   dctx.fillStyle='rgba(3,4,6,'+amb+')'; dctx.fillRect(0,0,W,H);
   dctx.globalCompositeOperation='destination-out';
   var gr=dctx.createRadialGradient(px,py,10,px,py,reveal*Z);
-  gr.addColorStop(0,'rgba(0,0,0,1)'); gr.addColorStop(.6,'rgba(0,0,0,.8)'); gr.addColorStop(1,'rgba(0,0,0,0)');
+  gr.addColorStop(0,'rgba(0,0,0,1)'); gr.addColorStop(.5,'rgba(0,0,0,.88)'); gr.addColorStop(.82,'rgba(0,0,0,.34)'); gr.addColorStop(1,'rgba(0,0,0,0)');
   dctx.fillStyle=gr; dctx.beginPath(); dctx.arc(px,py,reveal*Z,0,6.284); dctx.fill();
   /* the torch is a cone cast on the ground, so it widens with distance like real light */
   var coneLen=(level.theme==='forest'?380:330), half=0.34, fan=[];
@@ -2416,7 +2632,7 @@ function render(){
   for(var fj=0;fj<fan.length;fj++) dctx.lineTo(fan[fj][0],fan[fj][1]);
   dctx.closePath(); dctx.clip();
   var cg=dctx.createRadialGradient(px,py,14,px,py,coneLen);
-  cg.addColorStop(0,'rgba(0,0,0,1)'); cg.addColorStop(.55,'rgba(0,0,0,.9)'); cg.addColorStop(1,'rgba(0,0,0,0)');
+  cg.addColorStop(0,'rgba(0,0,0,1)'); cg.addColorStop(.42,'rgba(0,0,0,.94)'); cg.addColorStop(1,'rgba(0,0,0,0)');
   dctx.fillStyle=cg; dctx.fillRect(0,0,W,H);
   dctx.restore();
   dctx.globalCompositeOperation='source-over';
@@ -2455,6 +2671,19 @@ function render(){
     dctx.closePath(); dctx.fill();
   }
   ctx.drawImage(dark,0,0,W,H);
+  /* a shot is a light, not a decal: for a few frames the street jumps out of the dark */
+  if(flashLight.t>0){
+    var fk=clamp(flashLight.t/0.10,0,1);
+    var fpp=pj(flashLight.x,flashLight.y,18);
+    var fr2=150+130*fk;
+    var flg=ctx.createRadialGradient(fpp[0],fpp[1],3,fpp[0],fpp[1],fr2);
+    flg.addColorStop(0,'rgba(255,240,205,'+(0.62*fk).toFixed(3)+')');
+    flg.addColorStop(0.35,'rgba(255,188,110,'+(0.26*fk).toFixed(3)+')');
+    flg.addColorStop(1,'rgba(255,150,60,0)');
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle=flg; ctx.beginPath(); ctx.arc(fpp[0],fpp[1],fr2,0,6.284); ctx.fill();
+    ctx.globalCompositeOperation='source-over';
+  }
   }
   drawLaser();
   /* fire is its own light: it burns through the dark and rims the water orange */
@@ -2484,8 +2713,8 @@ function render(){
     var lp2=lamps[lq];
     var lpp=pj(lp2.x,lp2.y,0), lx=lpp[0], ly=lpp[1]-10;
     if(lx<-280||lx>W+280||ly<-280||ly>H+280) continue;
-    var lf=0.94+0.06*Math.sin(tNow*2.4+lq*1.9);
-    var lr2=lp2.r*Z*lf;
+    var lf=(lp2.f==null?1:lp2.f);
+    var lr2=lp2.r*Z*Math.max(0.05,lf);
     var lgr=ctx.createRadialGradient(lx,ly,8,lx,ly,lr2);
     lgr.addColorStop(0,'rgba(255,205,136,.46)');
     lgr.addColorStop(.45,'rgba(255,152,74,.17)');
@@ -2533,11 +2762,20 @@ function drawSticks(){
   ctx.save();
   [sticks.move,sticks.aim].forEach(function(s){
     if(!s) return;
-    ctx.strokeStyle='rgba(232,223,201,.22)'; ctx.lineWidth=2;
+    /* a thin ring, a dead-zone mark and a soft thumb ghost: readable, never in the way */
+    ctx.strokeStyle='rgba(232,223,201,.12)'; ctx.lineWidth=1.2;
     ctx.beginPath(); ctx.arc(s.ox,s.oy,46,0,6.284); ctx.stroke();
+    ctx.strokeStyle='rgba(232,223,201,.05)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(s.ox,s.oy,15,0,6.284); ctx.stroke();
     var dx=s.x-s.ox, dy=s.y-s.oy, len=Math.sqrt(dx*dx+dy*dy)||1, m=Math.min(len,46);
-    ctx.fillStyle='rgba(232,223,201,.28)';
-    ctx.beginPath(); ctx.arc(s.ox+dx/len*m, s.oy+dy/len*m, 20,0,6.284); ctx.fill();
+    var kx=s.ox+dx/len*m, ky=s.oy+dy/len*m;
+    var sg=ctx.createRadialGradient(kx,ky,0,kx,ky,27);
+    sg.addColorStop(0,'rgba(232,223,201,.15)');
+    sg.addColorStop(0.55,'rgba(232,223,201,.05)');
+    sg.addColorStop(1,'rgba(232,223,201,0)');
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(kx,ky,27,0,6.284); ctx.fill();
+    ctx.fillStyle='rgba(232,223,201,.13)';
+    ctx.beginPath(); ctx.arc(kx,ky,6.5,0,6.284); ctx.fill();
   });
   ctx.restore();
 }
@@ -2862,6 +3100,10 @@ window.__dn={
   gates:function(){ return gates.map(function(g){ return {need:g.need,open:g.open,prog:+g.prog.toFixed(2),x:Math.round(g.cx),y:Math.round(g.cy)}; }); },
   chests:function(){ return chests.map(function(c){ return {x:Math.round(c.x),y:Math.round(c.y),got:c.got}; }); },
   hazards:function(){ return hazards.length; },
+  vaults:function(){ return zombies.filter(function(z){ return !!z.vault; }).length; },
+  hopping:function(){ return zombies.filter(function(z){ return (z.hop||0)>0; }).length; },
+  marks:function(){ return marks.length; },
+  lights:function(){ var on=0; for(var i=0;i<lamps.length;i++){ if((lamps[i].f||1)>0.55) on++; } return {lamps:lamps.length,lit:on}; },
   tp:function(x,y){ if(player){ player.x=x; player.y=y; } },
   types:function(){ var o={}; zombies.forEach(function(z){ o[z.type]=(o[z.type]||0)+1; }); return o; },
   queue:function(){ return waveQueue.slice(); },
