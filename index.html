@@ -67,6 +67,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 #bSpecial{left:calc(env(safe-area-inset-left) + 2px);bottom:calc(env(safe-area-inset-bottom) + 4px)}
 #bGrenade{right:calc(env(safe-area-inset-right) + 2px);bottom:calc(env(safe-area-inset-bottom) + 86px)}
 #bMine{right:calc(env(safe-area-inset-right) + 2px);bottom:calc(env(safe-area-inset-bottom) + 4px)}
+/* the smash sits dead centre between the two thumbs, out of reach of neither */
+#bMelee{left:calc(50% - 27px);bottom:calc(env(safe-area-inset-bottom) + 6px)}
 .gbtn{position:absolute;pointer-events:auto;width:66px;height:66px;border-radius:50%;
   border:1px solid rgba(232,223,201,.13);
   background:radial-gradient(circle at 36% 30%,rgba(255,255,255,.09),rgba(6,7,9,.26) 72%);
@@ -238,6 +240,7 @@ p{margin:0 0 10px;color:var(--dim);font-size:13px}
     <button class="gbtn md" id="bGrenade"><b>◉</b><span>GRENADE</span><span class="cnt" id="grenCnt">3</span></button>
     <button class="gbtn sm" id="bMine"><b>▲</b><span>TRAP</span><span class="cnt" id="mineCnt">2</span></button>
     <button class="gbtn sm" id="bFlare"><b>✦</b><span>FLARE</span><span class="cnt" id="flareCnt">2</span></button>
+    <button class="gbtn sm" id="bMelee"><b>✊</b><span>SMASH</span></button>
     <button class="wslot on" id="wA" aria-label="weapon slot one"></button>
     <button class="wslot" id="wB" aria-label="weapon slot two"></button>
   </div>
@@ -997,6 +1000,54 @@ function bakeCityClutter(g,G){
   }
 }
 
+/* ---- paint on the asphalt: hazard hatching in front of every permanent barrier, tyre skid,
+   and the litter the gutter would have collected. All flat, so it bakes into the street. ---- */
+function bakeHazardPaint(g){
+  if(!mazeGrid || !mazeGrid.city) return;
+  var i;
+  for(i=0;i<solids.length;i++){
+    var s0=solids[i];
+    if(s0.kind!=='jersey' && s0.kind!=='dump') continue;
+    var long=s0.w>=s0.h, cx=s0.x+s0.w/2, cy=s0.y+s0.h/2;
+    g.save(); g.translate(cx,cy); if(!long) g.rotate(1.5708);
+    var halfW=Math.max(24,(long?s0.w:s0.h)/2), halfH=(long?s0.h:s0.w)/2;
+    for(var band=0;band<2;band++){
+      var y0=halfH+5+band*13;
+      for(var cxp=-halfW;cxp<halfW;cxp+=16){
+        g.fillStyle=(((cxp/16)|0)%2) ? 'rgba(26,24,17,.5)' : 'rgba(226,186,58,.30)';
+        g.beginPath();
+        g.moveTo(cxp,y0); g.lineTo(cxp+14,y0); g.lineTo(cxp+8,y0+10); g.lineTo(cxp-6,y0+10);
+        g.closePath(); g.fill();
+      }
+    }
+    g.restore();
+  }
+  /* somebody stood on the brake and still hit the thing in front of them */
+  for(i=0;i<46;i++){
+    var sx2=rnd(mazeGrid.T+40, world.w-mazeGrid.T-40), sy2=rnd(mazeGrid.T+40, world.h-mazeGrid.T-40);
+    if(inWall(sx2,sy2,10)) continue;
+    g.save(); g.translate(sx2,sy2); g.rotate(R()*6.28);
+    var len=26+R()*54, bend=(R()<0.5?-1:1)*(3+R()*7);
+    for(var side=-1;side<=1;side+=2){
+      g.strokeStyle='rgba(0,0,0,'+(0.16+R()*0.14).toFixed(3)+')';
+      g.lineWidth=3.2; g.lineCap='round';
+      g.beginPath(); g.moveTo(-len/2, side*5.5);
+      g.quadraticCurveTo(bend, side*5.5, len/2, side*5.5+bend*0.5); g.stroke();
+      g.strokeStyle='rgba(160,150,128,.05)'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(-len/2, side*5.5-1);
+      g.quadraticCurveTo(bend, side*5.5-1, len/2, side*5.5+bend*0.5-1); g.stroke();
+    }
+    g.restore();
+  }
+  for(i=0;i<180;i++){
+    var lx2=rnd(mazeGrid.T+20, world.w-mazeGrid.T-20), ly2=rnd(mazeGrid.T+20, world.h-mazeGrid.T-20);
+    if(inWall(lx2,ly2,2)) continue;
+    g.save(); g.translate(lx2,ly2); g.rotate(R()*3.14);
+    g.fillStyle='rgba(232,226,208,'+(0.05+R()*0.09).toFixed(3)+')';
+    g.fillRect(-4,-3,8,6);
+    g.restore();
+  }
+}
 function bakeWorld(){
   var tex=makeGround(level.theme);
   worldCanvas=document.createElement('canvas');
@@ -1006,6 +1057,7 @@ function bakeWorld(){
   g.fillRect(0,0,world.w,world.h);
   bakeStreets(g);
   bakeClutter(g);
+  bakeHazardPaint(g);
   bakePits(g);
   /* walls are NOT baked any more: they take part in the depth sort so they can hide
      whatever stands behind them. Only the flat, always-underfoot things live here. */
@@ -1189,7 +1241,8 @@ function buildMazeWorld(){
     {k:'bus',    long:132,short:56,body:'#8a3327',dark:'#501d16',L:34},
     {k:'ambo',   long:96, short:46,body:'#c9c3b0',dark:'#8e8879',L:28},
     {k:'cont',   long:118,short:56,body:'#3f5a63',dark:'#25353b',L:32},
-    {k:'dump',   long:64, short:46,body:'#3b4a37',dark:'#232c21',L:20}
+    {k:'dump',   long:64, short:46,body:'#3b4a37',dark:'#232c21',L:20},
+    {k:'semi',   long:198,short:66,body:'#8b8578',dark:'#4f4a42',L:44}
   ];
   for(var s9=0, s9tries=0; s9<(theme==='forest'?3:5) && s9tries<200; s9tries++){
     var sc3=Math.floor(R()*COLS), sr3=Math.floor(R()*ROWS);
@@ -1354,8 +1407,9 @@ function buildCityWorld(theme){
      cannot pass: two skip-sized blocks and a wreck either side of a gap you can still kite
      through. They go on the artery and on the two cross streets, never in a doorway. */
   function barrier(x,y,w,h){
-    solids.push({x:x-w/2, y:y-h/2, w:w, h:h, kind:'dump', body:'#55584e', dark:'#2c2f28',
-      L:20, seed:(x*3+y*5)|0});
+    /* a concrete lane divider, not a skip: low, heavy and striped, so the eye reads "closed" */
+    solids.push({x:x-w/2, y:y-h/2, w:w, h:h, kind:'jersey', body:'#a29e90', dark:'#57544b',
+      L:26, seed:(x*3+y*5)|0});
   }
   function wreck(x,y){
     props.push({x:x,y:y,w:72,h:36,r:26,kind:'car',hp:46,dead:false,rot:0,
@@ -1394,7 +1448,8 @@ function buildCityWorld(theme){
     {k:'bus',    long:132,short:56,body:'#8a3327',dark:'#501d16',L:34},
     {k:'ambo',   long:96, short:46,body:'#c9c3b0',dark:'#8e8879',L:28},
     {k:'cont',   long:118,short:56,body:'#3f5a63',dark:'#25353b',L:32},
-    {k:'dump',   long:64, short:46,body:'#3b4a37',dark:'#232c21',L:20}
+    {k:'dump',   long:64, short:46,body:'#3b4a37',dark:'#232c21',L:20},
+    {k:'semi',   long:198,short:66,body:'#8b8578',dark:'#4f4a42',L:44}
   ];
   for(i=0;i<6;i++){
     var wp=onStreet(), spec=SOLIDS[Math.floor(R()*SOLIDS.length)];
@@ -1403,6 +1458,15 @@ function buildCityWorld(theme){
     solids.push({x:wp.x-ww/2, y:wp.y-hh/2, w:ww, h:hh, kind:spec.k,
       body:spec.body, dark:spec.dark, L:spec.L, seed:(wp.x*7+wp.y*3)|0});
   }
+  /* one articulated lorry jack-knifed across the artery and burning: the loudest object on the
+     map, and the thing you can see from three streets away */
+  var semiX=SX[Math.floor(SX.length/2)]+rnd(-30,30), semiY=SY[mainRow]+PITCH*0.5+rnd(-26,26);
+  var semiW=Math.min(212,(MAINW||ROAD)-16);
+  solids.push({x:semiX-semiW/2, y:semiY-31, w:semiW, h:62, kind:'semi',
+    body:'#8b8578', dark:'#4f4a42', L:44, seed:(semiX*3+semiY)|0});
+  fires.push({x:semiX+semiW*0.30, y:semiY+12, r:30});
+  props.push({x:semiX-semiW*0.5-40, y:semiY+28, w:56, h:30, r:22, kind:'car', hp:46,
+    dead:false, rot:0, burnt:true, crashed:true, tilt:0, alarmHit:false});
   /* ---- chain link ----  construction fencing and burnt hoarding running along the kerb, one
      run per couple of blocks. It does not seal a street; it takes a lane out of it, which is what
      makes a wide road feel like a corridor and a horde feel like a squeeze. */
@@ -1414,6 +1478,26 @@ function buildCityWorld(theme){
     if(fx0<70||fx0+flen>world.w-70||fyY<70||fyY>world.h-70) continue;
     walls.push({x:fx0, y:fyY-5, w:flen, h:10, kind:'maze', style:'fence', lift:46,
       tone:0.5, seed:(fx0*5+fyY*3)|0});
+  }
+  /* ---- security gates ---- a chain-link panel dropped across a pavement on its own feet. It
+     seals a shortcut until you put enough rounds through the mesh, so the quiet route costs
+     noise. Movement blocks on the solid; the panel is destroyed through the prop. ---- */
+  for(i=0;i<3;i++){
+    var gp0=onPavement();
+    var gv=R()<0.5, gl=118;
+    var gw2=gv?14:gl, gh2=gv?gl:14;
+    if(gp0.x-gw2/2<70||gp0.x+gw2/2>world.w-70||gp0.y-gh2/2<70||gp0.y+gh2/2>world.h-70) continue;
+    var gsol={x:gp0.x-gw2/2, y:gp0.y-gh2/2, w:gw2, h:gh2, noDraw:true};
+    solids.push(gsol);
+    props.push({x:gp0.x, y:gp0.y, w:gw2, h:gh2, r:Math.max(gw2,gh2)*0.5,
+      kind:'secgate', hp:96, box:true, sol:gsol, dead:false});
+  }
+  /* ---- vending machines ---- a lit cabinet is a landmark in the dark. Shoot it open and the
+     street comes running; crack it by hand and there is something in it for you. ---- */
+  for(i=0;i<3;i++){
+    var vp0=onPavement();
+    props.push({x:vp0.x, y:vp0.y, r:13, kind:'vending', hp:58, dead:false});
+    lamps.push({x:vp0.x, y:vp0.y-4, r:92});
   }
   /* spikes and fire on the asphalt, never under the spawn */
   var hazCount=2+Math.floor(levelIndex/3)*2;
@@ -1924,7 +2008,15 @@ function hurtZombie(z,dmg,srcx,srcy){
       parts.push({x:z.x,y:z.y,vx:Math.cos(ja)*js,vy:Math.sin(ja)*js,life:rnd(.35,.7),
         r:rnd(1.8,4),c:R()<0.3?'#5a100d':'#8f1d18',kind:'blood'});
     }
-    if(marks.length<36) marks.push({x:z.x,y:z.y,r:z.r*rnd(0.9,1.5),a:0.40,rot:rnd(0,6.28),kind:'blood'});
+    if(marks.length<130){
+      marks.push({x:z.x,y:z.y,r:z.r*rnd(0.9,1.5),a:0.40,rot:rnd(0,6.28),kind:'blood'});
+      /* a second, darker pool offset from the body, and a spray stripe the way the round went:
+         the street should read as a place where people died, not a place with red dots on it */
+      marks.push({x:z.x+rnd(-13,13), y:z.y+rnd(-11,11), r:rnd(4,12), a:0.33, rot:R()*6.28, kind:'blood'});
+      var ba2=Math.atan2(z.y-srcy,z.x-srcx), bl2=rnd(22,58);
+      marks.push({x:z.x+Math.cos(ba2)*bl2*0.45, y:z.y+Math.sin(ba2)*bl2*0.45,
+        r:rnd(6,15), a:0.24, rot:ba2, kind:'blood'});
+    }
     hud();
   }
 }
@@ -1986,6 +2078,36 @@ function impact(x,y,vx,vy,flesh){
     parts.push({x:x,y:y,vx:rnd(-46,46),vy:rnd(-46,46),life:rnd(.25,.55),r:rnd(2,4.2),c:'#8a8578',kind:'dust'});
   }
   if(marks.length<36) marks.push({x:x,y:y,r:rnd(2.6,5),a:0.5,rot:rnd(0,6.28),kind:'chip'});
+}
+/* ---- melee ---- the butt of the gun, for when the street gets inside your arms. Quiet, so it
+   does not pull the block, and the only quiet way into a vending machine. ---- */
+function angDiff(a,b){ var d=a-b; while(d>Math.PI)d-=6.2831853; while(d<-Math.PI)d+=6.2831853; return d; }
+function melee(){
+  if(!player || scene!=='play' || (player.mcd||0)>0) return;
+  player.mcd=0.52;
+  var reach=64, arc=0.95, hitAny=false;
+  for(var i=0;i<props.length;i++){
+    var pr=props[i];
+    if(pr.dead) continue;
+    if(Math.sqrt(dist2(player.x,player.y,pr.x,pr.y))>reach+(pr.r||0)) continue;
+    if(Math.abs(angDiff(Math.atan2(pr.y-player.y,pr.x-player.x), player.aim))>arc) continue;
+    damageProp(pr,34,true); hitAny=true;
+  }
+  for(var z=0;z<zombies.length;z++){
+    var zb=zombies[z];
+    if(zb.dead) continue;
+    if(Math.sqrt(dist2(player.x,player.y,zb.x,zb.y))>reach+zb.r) continue;
+    if(Math.abs(angDiff(Math.atan2(zb.y-player.y,zb.x-player.x), player.aim))>arc) continue;
+    hurtZombie(zb,9,player.x,player.y);
+    zb.stun=Math.max(zb.stun||0,0.5);
+    zb.x+=Math.cos(player.aim)*10; zb.y+=Math.sin(player.aim)*10;
+    hitAny=true;
+  }
+  beep(hitAny?150:110,.09,.05,'square');
+  for(var m3=0;m3<4;m3++)
+    parts.push({x:player.x+Math.cos(player.aim)*30, y:player.y+Math.sin(player.aim)*30,
+      vx:rnd(-50,50),vy:rnd(-50,50),life:.16,r:1.6,c:'#d8d2c0',kind:'spark'});
+  hud();
 }
 function throwNade(){
   if(player.grenades<=0) return;
@@ -2078,7 +2200,7 @@ function armProp(pr,secs){
   pr.armT=secs; pr.arm=secs; pr.beep=0; pr.hp=0;
   if(dynLights.length<10) dynLights.push({x:pr.x,y:pr.y,r:130,t:0.16,dur:0.16,pw:0.8,c:'#ff5a3c'});
 }
-function damageProp(pr,dmg){
+function damageProp(pr,dmg,melee){
   if(pr.dead || pr.hp===undefined || pr.arm>0 || pr.chassis) return;
   /* TIER 1 - the first round in the panel sets the alarm off. No damage yet: the point is that
      every street around the car now knows exactly where you are. */
@@ -2096,6 +2218,38 @@ function damageProp(pr,dmg){
     pr.fire=true; pr.fuse=3.0; armProp(pr,3.0);
     noiseAt(pr.x,pr.y,4);
     showTut('ENGINE FIRE · three seconds');
+    return;
+  }
+  /* a security gate is a door, not a bomb: the panel drops, the solid goes with it, and the
+     pavement opens */
+  if(pr.kind==='secgate'){
+    pr.dead=true;
+    var si=solids.indexOf(pr.sol); if(si>=0) solids.splice(si,1);
+    noiseAt(pr.x,pr.y,4);
+    for(var sg4=0;sg4<18;sg4++)
+      parts.push({x:pr.x+rnd(-50,50), y:pr.y+rnd(-10,10), vx:rnd(-80,80), vy:rnd(-80,80),
+        life:rnd(.3,.7), r:rnd(1.5,3), c:'#9aa294', kind:'dust'});
+    showTut('GATE DOWN');
+    return;
+  }
+  if(pr.kind==='vending'){
+    pr.dead=true;
+    if(melee){
+      /* by hand it opens quietly, and there is something in it */
+      player.hp=Math.min(player.max, player.hp+22);
+      showTut('VENDING · +22 health');
+      for(var vq=0;vq<7;vq++)
+        parts.push({x:pr.x,y:pr.y,vx:rnd(-40,40),vy:rnd(-70,-10),life:.5,r:2,c:'#9effc0',kind:'spark'});
+    } else {
+      /* shot open it is a siren made of glass: everything in earshot turns its head */
+      noiseAt(pr.x,pr.y,7); lureAt(pr.x,pr.y,560,4.5); beep(220,.3,.12,'square');
+      scrap+=4;
+      for(var vq2=0;vq2<14;vq2++)
+        parts.push({x:pr.x,y:pr.y,vx:rnd(-110,110),vy:rnd(-120,20),life:rnd(.3,.6),r:rnd(1.5,3),
+          c:R()<0.5?'#9effc0':'#ffd166',kind:'spark'});
+      showTut('VENDING SMASHED · the street heard that');
+    }
+    hud();
     return;
   }
   if(pr.kind==='barrel') armProp(pr,1.05);
@@ -2217,6 +2371,7 @@ function update(dt){
   }
   /* timers */
   if(player.cd>0) player.cd-=dt;
+  if(player.mcd>0) player.mcd-=dt;
   if(player.reloading>0){ player.reloading-=dt; if(player.reloading<=0){ reloadNow(); hud(); } }
   if(player.inv>0) player.inv-=dt;
   if(player.shield>0) player.shield-=dt;
@@ -2383,7 +2538,14 @@ function update(dt){
       for(var p=0;p<props.length;p++){
         var pr=props[p];
         if(pr.dead||pr.kind==='tree') continue;
-        if(dist2(b.x,b.y,pr.x,pr.y)<(pr.r+3)*(pr.r+3)){ damageProp(pr,b.dmg); hit=true; break; }
+        if(pr.box){
+          /* a gate is a panel, not a circle: it has to be hit where it actually stands */
+          if(b.x>pr.x-pr.w/2&&b.x<pr.x+pr.w/2&&b.y>pr.y-pr.h/2&&b.y<pr.y+pr.h/2){
+            damageProp(pr,b.dmg,false); hit=true; hx=b.x; hy=b.y; break;
+          }
+          continue;
+        }
+        if(dist2(b.x,b.y,pr.x,pr.y)<(pr.r+3)*(pr.r+3)){ damageProp(pr,b.dmg,false); hit=true; break; }
       }
     }
     if(!hit){
@@ -3111,7 +3273,20 @@ function drawLogjam(w){
 /* ---------------- the big wrecks ---------------- */
 function drawSolid(o){
   var long=o.w>=o.h;
-  var H=o.kind==='trailer'?96:o.kind==='bus'?92:o.kind==='cont'?86:o.kind==='ambo'?70:48;
+  if(!o.body && o.kind!=='jersey') return;   /* collision-only entries are never painted */
+  if(o.kind==='jersey'){
+    /* a concrete lane divider: low, chipped, striped along the road face, so at night it reads
+       as "closed" before it reads as concrete */
+    box3d(o.x, o.y, o.w, o.h, 0, 30, '#bdb8a6', '#8e8a7c', '#5f5c53');
+    var jl=o.w>=o.h, jn=Math.max(2,Math.round((jl?o.w:o.h)/34));
+    for(var jb=0;jb<jn;jb++){
+      var jt=(jb+0.5)/jn;
+      if(jl) faceRect(o.x+o.w*jt-6, o.x+o.w*jt+6, o.y+o.h, 9, 24, 'rgba(226,186,58,.5)');
+      else   faceRect(o.y+o.h*jt-6, o.y+o.h*jt+6, o.x+o.w, 9, 24, 'rgba(226,186,58,.5)');
+    }
+    return;
+  }
+  var H=o.kind==='trailer'?96:o.kind==='bus'?92:o.kind==='cont'?86:o.kind==='ambo'?70:o.kind==='semi'?58:48;
   /* from this height the roof is most of what a hull is, so it keeps the body tone instead of
      blowing out to white, and it gets ribs and a hatch so it never reads as a blank card */
   box3d(o.x, o.y, o.w, o.h, 0, H, shade(o.body,0.9), shade(o.body,0.58), shade(o.body,0.4));
@@ -3200,10 +3375,73 @@ function drawPropBox(pr){
     box3d(pr.x-2, pr.y-2, 4, 4, 0, 96, '#3d4046', '#232529', '#171a1d');
     box3d(pr.x-11, pr.y-2, 22, 4, 96, 122, '#6a6d72', pr.face?'#8d8f93':'#b8322a', pr.face?'#6e7074':'#82201a');
     faceRect(pr.x-9, pr.x+9, pr.y+2, 99, 119, pr.face?'rgba(238,232,214,.82)':'rgba(196,54,44,.9)');
+  } else if(pr.kind==='secgate'){
+    drawSecGate(pr);
+  } else if(pr.kind==='vending'){
+    drawVending(pr);
   } else if(pr.kind==='barrel'){
     capsule(pr.x, pr.y, pr.r, pr.r*0.95, 30, '#6a4522', '#33200f', '#5a3a1c');
     faceRect(pr.x-pr.r, pr.x+pr.r, pr.y+pr.r, 12, 15, 'rgba(255,209,102,.35)');
   }
+}
+function drawSecGate(pr){
+  /* posts, a top rail and a mesh panel: the kerb fencing, dropped across the pavement on its
+     own feet. Torn holes and a damage bar appear once it has taken rounds. */
+  var longG=pr.w>=pr.h, span=longG?pr.w:pr.h, thick=longG?pr.h:pr.w, H=62;
+  if(longG){
+    box3d(pr.x-pr.w/2, pr.y-2, 5, thick+4, 0, H+8, '#6d7168','#3f433c', false);
+    box3d(pr.x+pr.w/2-5, pr.y-2, 5, thick+4, 0, H+8, '#6d7168','#3f433c', false);
+    box3d(pr.x-pr.w/2, pr.y+thick/2-2, pr.w, 4, H-4, H+2, '#8d9188','#55594f', false);
+    faceRect(pr.x-pr.w/2, pr.x+pr.w/2, pr.y+thick/2, 2, H-3, 'rgba(18,24,21,.62)');
+  } else {
+    box3d(pr.x-2, pr.y-pr.h/2, thick+4, 5, 0, H+8, '#6d7168','#3f433c', false);
+    box3d(pr.x-2, pr.y+pr.h/2-5, thick+4, 5, 0, H+8, '#6d7168','#3f433c', false);
+    faceRect(pr.y-pr.h/2, pr.y+pr.h/2, pr.x+thick/2, 2, H-3, 'rgba(18,24,21,.62)');
+  }
+  /* the mesh itself: two crossing sets of wires, so it reads as chain-link and not as a pane */
+  var n=Math.max(3,Math.round(span/22));
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(168,176,164,.34)';
+  for(var i=0;i<=n;i++){
+    var t=i/n;
+    if(longG){
+      var mx0=pr.x-pr.w/2+pr.w*t;
+      var b0=pj(mx0,pr.y+thick/2,3), b1=pj(mx0,pr.y+thick/2,H-4);
+      var e0=pj(pr.x-pr.w/2+pr.w*Math.min(1,t+0.16),pr.y+thick/2,3), e1=pj(pr.x-pr.w/2+pr.w*Math.min(1,t+0.16),pr.y+thick/2,H-4);
+      ctx.beginPath(); ctx.moveTo(b0[0],b0[1]); ctx.lineTo(e1[0],e1[1]); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(e0[0],e0[1]); ctx.lineTo(b1[0],b1[1]); ctx.stroke();
+    } else {
+      var my0=pr.y-pr.h/2+pr.h*t;
+      var c0=pj(pr.x+thick/2,my0,3), c1=pj(pr.x+thick/2,my0,H-4);
+      var f0=pj(pr.x+thick/2,pr.y-pr.h/2+pr.h*Math.min(1,t+0.16),3), f1=pj(pr.x+thick/2,pr.y-pr.h/2+pr.h*Math.min(1,t+0.16),H-4);
+      ctx.beginPath(); ctx.moveTo(c0[0],c0[1]); ctx.lineTo(f1[0],f1[1]); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(f0[0],f0[1]); ctx.lineTo(c1[0],c1[1]); ctx.stroke();
+    }
+  }
+  var pl=longG? pj(pr.x, pr.y+thick/2, 40) : pj(pr.x+thick/2, pr.y, 40);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.textAlign='center';
+  ctx.fillStyle='rgba(8,10,9,.62)'; ctx.fillRect(pl[0]-30, pl[1]-13, 60, 20);
+  ctx.fillStyle='rgba(226,186,58,.92)'; ctx.font='700 11px ui-monospace,monospace';
+  ctx.fillText('SEALED', pl[0], pl[1]+1);
+  if(pr.hp<96){
+    ctx.fillStyle='rgba(0,0,0,.7)'; ctx.fillRect(pl[0]-30, pl[1]+8, 60, 4);
+    ctx.fillStyle='#ff4b3e'; ctx.fillRect(pl[0]-30, pl[1]+8, 60*Math.max(0,pr.hp/96), 4);
+  }
+  ctx.textAlign='left';
+}
+function drawVending(pr){
+  if(pr.dead){
+    box3d(pr.x-13, pr.y-11, 26, 22, 0, 40, '#1b1c1a','#101110','#0a0b0a');
+    faceRect(pr.x-9, pr.x+9, pr.y+11, 10, 30, 'rgba(60,70,64,.35)');
+    return;
+  }
+  /* the lit face: the only warm rectangle for a block in either direction */
+  var hue=(tNow*28+pr.x*0.6)%360;
+  box3d(pr.x-13, pr.y-11, 26, 22, 0, 52, '#2b3138', '#1c2126', '#12161a');
+  faceRect(pr.x-9, pr.x+9, pr.y+11, 12, 44, 'hsla('+hue.toFixed(0)+',70%,58%,.5)');
+  faceRect(pr.x-9, pr.x+9, pr.y+11, 32, 44, 'rgba(255,255,255,.13)');
+  box3d(pr.x-13, pr.y-11, 26, 3, 46, 52, '#565f68', '#3a4149', false);
 }
 function drawCarBody(pr){
   var body=pr.burnt?'#241f1a':(pr.hp<20?'#3a231b':'#2f3b44');
@@ -3231,8 +3469,13 @@ function drawCarBody(pr){
   if(pr.crashed) tri(pj(x0+14,y0+36,0), pj(x0+40,y0+36,0), pj(x0+24,y0+36,24), 'rgba(8,10,12,.85)');
 }
 function drawCacheBox(cst){
-  box3d(cst.x-15, cst.y-11, 30, 22, 0, 28, '#8a6a28', '#6e5220', '#4d3a15');
-  faceRect(cst.x-15, cst.x+15, cst.y+11, 10, 16, '#ffd166');
+  /* a supply case with a status lamp that cycles gold, green, cyan, violet. It is the only thing
+     on the street that changes colour, so it catches the eye through the dark. */
+  var hue=(tNow*46 + cst.x*0.35)%360;
+  var glow='hsla('+hue.toFixed(0)+',88%,60%,.92)';
+  box3d(cst.x-15, cst.y-11, 30, 22, 0, 28, '#7e642a', '#5f4a1d', '#3f3214');
+  faceRect(cst.x-13, cst.x+13, cst.y+11, 9, 15, glow);
+  faceRect(cst.x-4, cst.x+4, cst.y+11, 17, 21, glow);
 }
 function drawGateBox(g2){
   var col=g2.need==='power'?'#3a3f52':g2.need==='door'?'#4a4a4e':g2.need==='debris'?'#4a3a2a':'#2f3a44';
@@ -3425,7 +3668,10 @@ function drawLaser(){
   lg.addColorStop(0,'rgba(255,74,52,.55)');
   lg.addColorStop(.72,'rgba(255,58,44,.26)');
   lg.addColorStop(1,'rgba(255,66,48,.6)');
-  ctx.strokeStyle=lg; ctx.lineWidth=1.1; ctx.lineCap='round';
+  ctx.strokeStyle=lg; ctx.lineWidth=1.5; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(m[0],m[1]); ctx.lineTo(hp[0],hp[1]); ctx.stroke();
+  /* a hot core inside the 1.5px beam: a plain red line reads as a pink thread, this reads as light */
+  ctx.strokeStyle='rgba(255,198,168,.55)'; ctx.lineWidth=0.7;
   ctx.beginPath(); ctx.moveTo(m[0],m[1]); ctx.lineTo(hp[0],hp[1]); ctx.stroke();
   var upright=false;
   if(kind===1){
@@ -3445,7 +3691,7 @@ function drawLaser(){
 }
 function render(){
   ctx.save();
-  ctx.fillStyle='#0b0b0d'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#070a12'; ctx.fillRect(0,0,W,H);
   if(scene!=='play'||!player){ ctx.restore(); return; }
   NEARW=null;
   var sh=shake?rnd(-shake,shake):0, sv=shake?rnd(-shake,shake):0;
@@ -3542,6 +3788,7 @@ function render(){
   }
   for(var si2=0;si2<solids.length;si2++){
     var s20=solids[si2];
+    if(s20.noDraw) continue;      /* a gate's solid is the collision only: the prop draws the panel */
     if(!onScreen(s20.x+s20.w*0.5,s20.y+s20.h*0.5,Math.max(s20.w,s20.h))) continue;
     ents.push({y:s20.y+s20.h, t:6, o:s20});
   }
@@ -3635,7 +3882,7 @@ function render(){
   var reveal=level.reveal||290;
   if(!window.__nolit){
   dctx.clearRect(0,0,W,H);
-  dctx.fillStyle='rgba(3,4,6,'+amb+')'; dctx.fillRect(0,0,W,H);
+  dctx.fillStyle='rgba(5,9,20,'+amb+')'; dctx.fillRect(0,0,W,H);
   dctx.globalCompositeOperation='destination-out';
   var gr=dctx.createRadialGradient(px,py,10,px,py,reveal*Z);
   gr.addColorStop(0,'rgba(0,0,0,1)'); gr.addColorStop(.5,'rgba(0,0,0,.88)'); gr.addColorStop(.82,'rgba(0,0,0,.34)'); gr.addColorStop(1,'rgba(0,0,0,0)');
@@ -3659,7 +3906,7 @@ function render(){
      Every block close enough to matter throws the shadow of the torch: the two corners that
      span the widest angle from the player are the silhouette edges, and the shadow is that
      span carried away from the light. Walls, wrecks and rubble all cast the same way. */
-  dctx.fillStyle='rgba(3,4,6,'+(Math.min(0.92,amb)*0.86).toFixed(3)+')';
+  dctx.fillStyle='rgba(5,9,20,'+(Math.min(0.92,amb)*0.86).toFixed(3)+')';
   var pxs=pj(player.x,player.y,0)[0], pys=pj(player.x,player.y,0)[1];
   var castW=wallsNear();
   for(var sw2=0;sw2<castW.length;sw2++){
@@ -4197,6 +4444,7 @@ $('bSpecial').addEventListener('click',special);
 $('bGrenade').addEventListener('click',throwNade);
 $('bMine').addEventListener('click',placeMine);
 $('bFlare').addEventListener('click',throwFlare);
+$('bMelee').addEventListener('click',melee);
 /* on a keyboard: 1-3 and Q swap, F throws a flare */
 window.addEventListener('keydown',function(e){
   if(scene!=='play') return;
@@ -4362,6 +4610,13 @@ window.__dn={
   vaults:function(){ return zombies.filter(function(z){ return !!z.vault; }).length; },
   hopping:function(){ return zombies.filter(function(z){ return (z.hop||0)>0; }).length; },
   marks:function(){ return marks.length; },
+  secgates:function(){ return props.filter(function(p){return p.kind==='secgate';})
+    .map(function(p){return {x:Math.round(p.x),y:Math.round(p.y),hp:p.hp,dead:!!p.dead,box:solids.indexOf(p.sol)>=0};}); },
+  vendings:function(){ return props.filter(function(p){return p.kind==='vending';})
+    .map(function(p){return {x:Math.round(p.x),y:Math.round(p.y),hp:p.hp,dead:!!p.dead};}); },
+  jerseys:function(){ return solids.filter(function(o){return o.kind==='jersey';}).length; },
+  semis:function(){ return solids.filter(function(o){return o.kind==='semi';}).length; },
+  melee:melee,
   lights:function(){ var on=0; for(var i=0;i<lamps.length;i++){ if((lamps[i].f||1)>0.55) on++; } return {lamps:lamps.length,lit:on}; },
   tp:function(x,y){ if(player){ player.x=x; player.y=y; } },
   types:function(){ var o={}; zombies.forEach(function(z){ o[z.type]=(o[z.type]||0)+1; }); return o; },
