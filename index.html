@@ -1659,7 +1659,7 @@ function fireEvent(k){
   }
   if(dynLights.length<10) dynLights.push({x:bx,y:by,r:210,t:.5,dur:.5,pw:.9,
     c:kind==='alarm'?'#ff8a4a':'#cfe6ea'});
-  booms.push({x:bx,y:by,r:150,max:340,t:0,dur:.7,heavy:false});
+  booms.push({x:bx,y:by,r:52,max:118,t:0,dur:.62,heavy:false});
   shake=Math.min(shake+4,9);
   beep(kind==='alarm'?520:180, .16, .09, kind==='alarm'?'square':'sawtooth');
   showTut(EV_TXT[kind]||'THE ROAD IS BLOCKED');
