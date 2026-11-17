@@ -2449,10 +2449,13 @@ function drawHouse(w){
         var zt=Math.min(H-12,zb+34);
         if(zt<=zb+8) continue;
         sideRectX(xf, yb+3, yb+w.h-3, zb-8, zb-3, shade(sCol,0.78));
-        for(var wy=yb+16; wy<yb+w.h-16; wy+=36){
-          var wl=((s2+fl*7+wy)%13===0);
-          sideRectX(xf, wy, wy+18, zb, zt, wl?'rgba(255,176,96,.32)':'rgba(6,9,12,.9)');
+        sideRectX(xf, yb+8, yb+w.h-8, zb, zt, 'rgba(6,9,12,.9)');
+        var mull=Math.max(2,Math.floor(w.h/34));
+        for(var wy=1;wy<mull;wy++){
+          var yy2=yb+8+(w.h-16)*wy/mull;
+          sideRectX(xf, yy2-1.6, yy2+1.6, zb, zt, shade(sCol,0.92));
         }
+        if((s2+fl*5)%4===0) sideRectX(xf, yb+w.h*0.5, yb+w.h*0.5+16, zb, zt, 'rgba(255,176,96,.28)');
       }
       /* drainpipe down the near corner */
       box3d(visEast? xf-4 : xf+1, front-7, 3.5, 3.5, 0, H-8, shade(sCol,1.1), shade(sCol,0.9), false);
@@ -2492,19 +2495,23 @@ function drawHouse(w){
         if(z0+26>H-12) break;
         faceRect(sx, sx+sw, fx, z0-8, z0-3, 'rgba(0,0,0,.30)');
         faceRect(sx, sx+sw, fx, z0-3, z0, shade(fCol,1.24));          /* string course */
+        /* one dark band for the whole floor, then mullions in the wall tone: the same row of
+           windows for a third of the fills, which is what keeps a street of them affordable */
         var cols=Math.max(2,Math.round(sw/46)), step=sw/cols;
-        for(var c2=0;c2<cols;c2++){
-          var wx=sx+step*c2+step*0.24, ww=step*0.52;
-          var on=((s2+fl2*5+c2*3)%11===0);
-          faceRect(wx, wx+ww, fx, z0+2, z1, on?'rgba(255,182,104,.42)':'rgba(7,10,13,.92)');
-          if(near){
-            faceRect(wx-2, wx+ww+2, fx, z0-1, z0+2, shade(fCol,1.1));
-            faceRect(wx-1.5, wx+ww+1.5, fx, z1, z1+3, shade(fCol,0.72));
-          }
-          if(near && (s2+c2*7)%9===0){
-            faceRect(wx+1, wx+ww-1, fx, z0+6, z0+12, 'rgba(76,62,44,.85)');
-            faceRect(wx+1, wx+ww-1, fx, z0+18, z0+24, 'rgba(76,62,44,.85)');
-          }
+        faceRect(sx+step*0.16, sx+sw-step*0.16, fx, z0+2, z1, 'rgba(7,10,13,.92)');
+        for(var c2=0;c2<=cols;c2++){
+          var mx=sx+step*c2, mw=Math.max(2,step*0.07);
+          faceRect(mx-mw*0.5, mx+mw*0.5, fx, z0+2, z1, shade(fCol,0.96));
+        }
+        if(near){
+          faceRect(sx+step*0.16, sx+sw-step*0.16, fx, z0+2, z0+4, shade(fCol,1.08));
+          faceRect(sx+step*0.16, sx+sw-step*0.16, fx, z1-2, z1, shade(fCol,0.7));
+        }
+        /* a couple of rooms are still lit */
+        for(var lcw=0;lcw<2;lcw++){
+          if((s2+fl2*5+lcw*7)%3!==0) continue;
+          var lwx=Math.min(sx+sw-step*0.9, sx+step*(0.4+lcw*1.6));
+          faceRect(lwx, lwx+step*0.62, fx, z0+3, z1-2, 'rgba(255,182,104,.40)');
         }
       }
     }
@@ -2540,10 +2547,12 @@ function drawHouse(w){
         shade(roofTone,1.26), shade(fCol,0.8), shade(fCol,0.5));
       box3d(sx+sw*0.66, yb+w.h*0.20, 18, 16, H+8, H+22, '#3d423c', '#2b2f2a', '#20231f');
       if(r1<4){
-        capsule(sx+sw*0.30, yb+w.h*0.60, 15, 13, H+8, '#3a3d38', '#242622', '#4a4d46');
-        capsule(sx+sw*0.30, yb+w.h*0.60, 15, 13, H+58, '#3a3d38', '#242622', '#4a4d46');
+        /* a squat tank, not a mast: anything tall on a roof leans toward the camera at this
+           angle and ends up hanging over the street like a bollard */
+        box3d(sx+sw*0.26, yb+w.h*0.52, 26, 22, H+8, H+26, '#43463f', '#2e312c', '#22251f');
+        box3d(sx+sw*0.30, yb+w.h*0.56, 18, 14, H+26, H+30, '#4c4f47', '#33362f', false);
       }
-      box3d(sx+sw*0.88, yb+w.h*0.38, 2.5, 2.5, H+8, H+50, '#2a2d2a', '#1d201d', false);
+      box3d(sx+sw*0.88, yb+w.h*0.38, 2.5, 2.5, H+8, H+24, '#2a2d2a', '#1d201d', false);
       /* tar seams across the roof, so the top is a surface and not a blank plane */
       var seam=pj(sx+sw*0.46, yb+w.h*0.05, H+8);
       for(var sm=0; sm<2; sm++){
