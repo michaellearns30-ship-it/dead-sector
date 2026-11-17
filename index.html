@@ -1221,7 +1221,9 @@ function buildCityWorld(theme){
     var b=blocks[i];
     if(b===plaza) continue;
     var m=24, x0=b.x+m, y0=b.y+m, bw=b.w-m*2, bh=b.h-m*2;
-    var bigH=(levelIndex<=1?120:150)+Math.floor(R()*64);
+    /* two to four storeys: a street of shops with flats over them, not one-storey slabs */
+    var storeys=3+Math.floor(R()*2)+(levelIndex>2?1:0);
+    var bigH=storeys*58+Math.floor(R()*18);
     var deep=Math.round(bh*(0.38+R()*0.12));
     /* a rear building only exists if a body can get round it on all three sides */
     var maxDeep=bh-ALLEY-LOOP-64;
@@ -2303,10 +2305,18 @@ function quad(a,b,c,d,fill){
    swap sides, and filling them in order leaves a spike sticking out into the street. Sorting
    the corners around their centre gives the outline those four points actually enclose. */
 function quadHull(a,b,c,d,fill){
-  /* A face whose four corners cross over has turned edge-on: it has no area on screen, and the
-     convex outline of its corners is a wedge lying across the road. Not drawing it is the
-     honest answer - filling the outline is what put a spike under every roofline. */
-  return;
+  /* A vertical face seen from any angle is a straight-edged quad on screen, so it is painted as
+     two triangles. Splitting the quad is what makes the crossing order safe: each triangle has
+     three stable corners, and no fill can run away across the street. */
+  ctx.fillStyle=fill;
+  ctx.beginPath();
+  ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.lineTo(c[0],c[1]); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(a[0],a[1]); ctx.lineTo(c[0],c[1]); ctx.lineTo(d[0],d[1]); ctx.closePath(); ctx.fill();
+}
+/* a rectangle painted on a wall that faces east or west: (y, height) at a fixed x */
+function sideRectX(xFace,y0,y1,z0,z1,fill){
+  quadHull(pj(xFace,y0,z0), pj(xFace,y1,z0), pj(xFace,y1,z1), pj(xFace,y0,z1), fill);
 }
 function tri(a,b,c,fill){
   ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.lineTo(c[0],c[1]);
@@ -2335,9 +2345,12 @@ function box3d(x,y,w,h,z0,H,top,faceCol,sideCol){
   castShadow(x,y,w,h,H);
   /* the flank facing the camera */
   quad(pj(x,y+h,z0), pj(x+w,y+h,z0), pj(x+w,y+h,H), pj(x,y+h,H), faceCol);
-  /* whichever side is turned toward us, which perspective now actually reveals */
-  if(x+w<cam.x) quadHull(pj(x+w,y,z0), pj(x+w,y+h,z0), pj(x+w,y+h,H), pj(x+w,y,H), sideCol||faceCol);
-  else if(x>cam.x) quadHull(pj(x,y,z0), pj(x,y+h,z0), pj(x,y+h,H), pj(x,y,H), sideCol||faceCol);
+  /* whichever side is turned toward us, which perspective now actually reveals. A face seen at
+     a grazing angle is a sub-pixel sliver that draws as a long bright hairline across the street,
+     so it is dropped unless it is actually open enough to read. */
+  var openness=(y+h-cam.y+CAM_BACK)*0.014;
+  if(x+w<cam.x){ if(cam.x-(x+w)>openness) quadHull(pj(x+w,y,z0), pj(x+w,y+h,z0), pj(x+w,y+h,H), pj(x+w,y,H), sideCol||faceCol); }
+  else if(x>cam.x){ if(x-cam.x>openness) quadHull(pj(x,y,z0), pj(x,y+h,z0), pj(x,y+h,H), pj(x,y,H), sideCol||faceCol); }
   /* roof */
   quad(pj(x,y,H), pj(x+w,y,H), pj(x+w,y+h,H), pj(x,y+h,H), top);
 }
@@ -2381,64 +2394,168 @@ function drawWallBox(w){
   return drawHouse(w);
 }
 function drawHouse(w){
-  /* A block is not one building. It is two or three, each set back off a pavement of its own,
-     so a street reads as a row of buildings instead of one long billboard of windows. The
-     collision footprint is unchanged: only what you see got deeper. */
-  var H0=w.lift||280;
-  var face=HOUSE_TONES[(w.seed)%HOUSE_TONES.length];
-  var topTone=HOUSE_TONES[(w.seed+2)%HOUSE_TONES.length];
-  var front=w.y+w.h;                          /* the edge the camera looks at */
-  /* pavement, then the kerb along its street side */
-  quad(pj(w.x-8,front+30,0), pj(w.x+w.w+8,front+30,0), pj(w.x+w.w+8,front,0), pj(w.x-8,front,0), '#3b3934');
-  quad(pj(w.x-8,front+30,0), pj(w.x+w.w+8,front+30,0), pj(w.x+w.w+8,front+25,0), pj(w.x-8,front+25,0), '#4a4740');
-  var farFront=(front-cam.y)>250;
-  var n=(w.w>=330&&!farFront)?2:1, seg=w.w/n;
-  var depth=Math.max(46,w.h-2);   /* the block is as deep as it collides */
+  /* ---- a block is a row of buildings, not a boulder ----
+     Each frontage is built the same way: a plinth on the pavement, a ground floor of shops or a
+     shutter, two or three floors of flats above it, a string course under every floor, a parapet
+     with a coping stone, and something standing on the roof. The camera can see the south wall
+     and one flank, so both are built: the flank gets the same floors and windows, which is what
+     turns a card into a solid volume. */
+  var H0=w.lift||200;
+  var seed=Math.abs(w.seed)|0;
+  var arch=seed%3;                       /* 0 flats over shops · 1 shopfront row · 2 industrial */
+  var tone=HOUSE_TONES[seed%HOUSE_TONES.length];
+  var roofTone=shade(tone,0.56);        /* tar roof: darker than the wall, which is what makes
+                                           a lit facade stand up off its own top */
+  var front=w.y+w.h;
+  var dist=front-cam.y;
+  var near=dist<260, mid=dist<430;      /* three tiers of detail, so a far block costs nothing */
+  var far=dist>430;
+  var x0=w.x, x1=w.x+w.w, yb=w.y;
+
+  /* ---- the pavement it stands on, the kerb, and the shade at its foot ----
+     Only when the slab is actually in frame: a paving strip a thousand units away projects to a
+     bright hairline lying across the street. */
+  if(dist<390){
+    quad(pj(x0-8,front+26,0), pj(x1+8,front+26,0), pj(x1+8,front-4,0), pj(x0-8,front-4,0), '#34322d');
+    quad(pj(x0-8,front+26,0), pj(x1+8,front+26,0), pj(x1+8,front+22,0), pj(x0-8,front+22,0), '#4d4a42');
+    quad(pj(x0-7,front+9,0), pj(x1+7,front+9,0), pj(x1+7,front-3,0), pj(x0-7,front-3,0), 'rgba(0,0,0,.32)');
+  }
+
+  /* ---- a terrace, not one slab: the block front is divided into houses of 85-130 units, each
+     with its own height, its own roof and its own frontage. That is how a real street wall is
+     built, and it is what stops a 218-wide block reading as one continuous billboard. ---- */
+  var n=Math.max(1,Math.min(3,Math.round(w.w/100)));
+  var seg=w.w/n;
   for(var ii=0;ii<n;ii++){
-    var sx=w.x+ii*seg+2, sw=seg-4;
-    var set=1+((w.seed+ii*31)%9);
-    var H=H0*(0.78+(((w.seed+ii*57)%27)/100));
-    var fx=front-set;                          /* facade line, set back off the pavement */
-    var roof=shade(topTone,0.92);
-    box3d(sx, fx-depth, sw, depth, 0, H, roof, shade(face,0.92), shade(face,0.6));
-    /* roof furniture: a plant box and a vent stack, so the top is a roof and not a boulder */
-    if(!farFront && sw>64){
-      var ry=fx-Math.max(46,depth*0.62)-((w.seed+ii*7)%16);
-      box3d(sx+sw*0.18, ry, 26, 20, H, H+14, shade(roof,1.3), shade(roof,0.9), shade(roof,0.7));
-      box3d(sx+sw*0.62, ry+4, 9, 9, H, H+26, shade(roof,1.45), shade(roof,1.05), shade(roof,0.8));
-      if((w.seed+ii)%3===0)
-        box3d(sx+sw*0.42, ry-2, 14, 12, H, H+10, '#3a3f34', '#2a2e26', '#1e211a');
+    var sx=w.x+ii*seg, sw=seg;
+    var s2=seed+ii*37;
+    /* a narrow house does not get to be a tower: height follows its width */
+    var H=Math.min(H0*(0.78+(((s2*7)%23)/100)), 96+sw*0.9);
+    var gap=(ii>0)?3:0;                       /* a party-wall joint between neighbours */
+    sx+=gap; sw-=gap;
+    var fx=front-2;                       /* the facade line, hard against the pavement */
+    var lit=shade(tone,1.0+(s2%5)*0.02);
+    var fCol=shade(lit,1.0), sCol=shade(lit,0.58);     /* the wall holds the light, the flank turns away */
+
+    box3d(sx, yb, sw, w.h, 0, H, shade(roofTone,1.02), fCol, sCol);
+
+    /* ---- the flank: the same floors and windows on the side we can see ---- */
+    var visEast=(sx+sw<cam.x), visWest=(sx>cam.x);
+    if((visEast||visWest) && near){
+      var xf=visEast? sx+sw : sx;
+      var fStores=Math.max(2,Math.round(H/64));
+      for(var fl=0;fl<fStores;fl++){
+        var zb=fl===0?8:44+(fl-1)*56;
+        var zt=Math.min(H-12,zb+34);
+        if(zt<=zb+8) continue;
+        sideRectX(xf, yb+3, yb+w.h-3, zb-8, zb-3, shade(sCol,0.78));
+        for(var wy=yb+16; wy<yb+w.h-16; wy+=36){
+          var wl=((s2+fl*7+wy)%13===0);
+          sideRectX(xf, wy, wy+18, zb, zt, wl?'rgba(255,176,96,.32)':'rgba(6,9,12,.9)');
+        }
+      }
+      /* drainpipe down the near corner */
+      box3d(visEast? xf-4 : xf+1, front-7, 3.5, 3.5, 0, H-8, shade(sCol,1.1), shade(sCol,0.9), false);
     }
-    /* Clip the facade detail to the facade itself. Seen from this angle a building off to one
-       side has its wall almost edge-on, and unclipped windows march away from it in a stair of
-       little rectangles across the street. */
+
+    /* ---- facade detail, clipped hard to the wall plane ---- */
     var fA=pj(sx,fx,0), fB=pj(sx+sw,fx,0), fC=pj(sx+sw,fx,H), fD=pj(sx,fx,H);
+    if(!far){
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(fA[0],fA[1]); ctx.lineTo(fB[0],fB[1]);
     ctx.lineTo(fC[0],fC[1]); ctx.lineTo(fD[0],fD[1]); ctx.closePath(); ctx.clip();
-    /* ground floor: shopfront band, a door, one shutter still down */
-    faceRect(sx, sx+sw, fx, 0, Math.min(44,H*0.2), 'rgba(9,11,13,.6)');
-    faceRect(sx+sw*0.14, sx+sw*0.14+16, fx, 0, 34, 'rgba(5,7,9,.92)');
-    faceRect(sx+sw*0.52, sx+sw*0.86, fx, 12, 36, ((w.seed+ii)%4===0)?'rgba(255,178,92,.34)':'rgba(18,22,26,.88)');
-    /* windows, in rows that stop short of the roof line */
-    var rows=farFront?1:Math.min(3,Math.max(2,Math.floor(H/95)));
-    for(var row=0;row<rows;row++){
-      var z0=54+row*Math.min(52,(H-90)/rows);
-      if(z0+16>H-8) break;
-      for(var wx=sx+10;wx<sx+sw-16;wx+=38){
-        var lit=((w.seed+ii*7+row*3)%9===0);
-        faceRect(wx, wx+13, fx, z0, z0+18, lit?'rgba(255,178,92,.5)':'rgba(6,9,12,.92)');
+
+    /* plinth: a dark base course where the wall meets the pavement */
+    faceRect(sx-1, sx+sw+1, fx, 0, 13, 'rgba(11,10,9,.88)');
+    faceRect(sx-1, sx+sw+1, fx, 13, 16, shade(fCol,1.22));
+
+    var stores2=Math.max(2,Math.round(H/64));
+    var ground=arch===2?58:46;
+    if(arch===2){
+      /* industrial: roller shutter, service door */
+      faceRect(sx+8, sx+sw-8, fx, 6, ground-6, 'rgba(26,26,24,.92)');
+      for(var sh=0; sh<6; sh++)
+        faceRect(sx+10, sx+sw-10, fx, 9+sh*7, 12+sh*7, shade('#3a3a36',0.9+sh*0.03));
+      faceRect(sx+sw*0.5-9, sx+sw*0.5+9, fx, 0, ground*0.72, 'rgba(6,8,10,.9)');
+    } else {
+      faceRect(sx+6, sx+sw-6, fx, 4, ground, 'rgba(10,13,16,.85)');
+      faceRect(sx+sw*0.12, sx+sw*0.46, fx, 8, ground-8, (s2%4===0)?'rgba(255,178,92,.30)':'rgba(24,30,36,.9)');
+      faceRect(sx+sw*0.54, sx+sw*0.86, fx, 8, ground-8, 'rgba(20,25,30,.92)');
+      faceRect(sx+sw*0.46, sx+sw*0.54, fx, 0, ground-6, 'rgba(5,7,9,.95)');
+      faceRect(sx, sx+sw, fx, ground, ground+9, shade(fCol,0.62));   /* fascia where the sign was */
+    }
+    if(near){
+      for(var fl2=0;fl2<stores2-1;fl2++){
+        var z0=ground+16+fl2*Math.max(46,Math.min(60,(H-ground-24)/(stores2-1)));
+        var z1=z0+30;
+        if(z0+26>H-12) break;
+        faceRect(sx, sx+sw, fx, z0-8, z0-3, 'rgba(0,0,0,.30)');
+        faceRect(sx, sx+sw, fx, z0-3, z0, shade(fCol,1.24));          /* string course */
+        var cols=Math.max(2,Math.round(sw/46)), step=sw/cols;
+        for(var c2=0;c2<cols;c2++){
+          var wx=sx+step*c2+step*0.24, ww=step*0.52;
+          var on=((s2+fl2*5+c2*3)%11===0);
+          faceRect(wx, wx+ww, fx, z0+2, z1, on?'rgba(255,182,104,.42)':'rgba(7,10,13,.92)');
+          if(near){
+            faceRect(wx-2, wx+ww+2, fx, z0-1, z0+2, shade(fCol,1.1));
+            faceRect(wx-1.5, wx+ww+1.5, fx, z1, z1+3, shade(fCol,0.72));
+          }
+          if(near && (s2+c2*7)%9===0){
+            faceRect(wx+1, wx+ww-1, fx, z0+6, z0+12, 'rgba(76,62,44,.85)');
+            faceRect(wx+1, wx+ww-1, fx, z0+18, z0+24, 'rgba(76,62,44,.85)');
+          }
+        }
       }
     }
     ctx.restore();
-    /* parapet along the top, broken in places */
-    box3d(sx+2, fx-depth, sw-4, depth, H, H+9, shade(topTone,0.66), shade(face,0.62), false);
+    }
+
+    /* ---- awning and stoop: the building actually meets the street ---- */
+    if(near && arch!==2 && sw>70){
+      var aw=Math.min(sw*0.44,64), ax=sx+sw*0.08;
+      box3d(ax, front+1, aw, 16, 40, 48, shade('#4a2d24',1.05), shade('#5b382a',0.92), '#3a231c');
+      box3d(ax+4, front+13, aw-8, 4, 38, 41, '#2d1a15', '#241511', false);
+      box3d(sx+sw*0.46, front+2, 22, 12, 0, 7, '#514c43', '#3c3831', '#2e2b26');
+      box3d(sx+sw*0.46, front+10, 22, 8, 0, 3, '#5a554b', '#43403a', false);
+    }
+
+    /* ---- parapet with a coping stone ---- */
+    box3d(sx, yb, sw, w.h, H, H+8, shade(roofTone,0.9), shade(fCol,0.62), false);
+    if(!far){
+      /* the coping catches the sky, so the roofline reads as an edge and not a fade */
+      faceRect(sx, sx+sw, fx, H+6, H+9, shade(fCol,1.45));
+      faceRect(sx, sx+sw, fx, H, H+2, 'rgba(0,0,0,.45)');
+    }
+    if(mid){
+      /* the roof sits a little below its coping: a rim of shade all the way round */
+      quad(pj(sx+5,yb+w.h-5,H+8), pj(sx+sw-5,yb+w.h-5,H+8), pj(sx+sw-5,yb+5,H+8), pj(sx+5,yb+5,H+8), shade(roofTone,0.82));
+      quad(pj(sx+9,yb+w.h-9,H+8), pj(sx+sw-9,yb+w.h-9,H+8), pj(sx+sw-9,yb+9,H+8), pj(sx+9,yb+9,H+8), shade(roofTone,1.12));
+    }
+
+    /* ---- roof furniture ---- */
+    if(near && sw>60){
+      var r1=s2%7, rx=sx+sw*(0.10+((s2%4)*0.15));
+      box3d(rx, yb+w.h*0.28, Math.min(46,sw*0.3), Math.max(24,w.h*0.26), H+8, H+30,
+        shade(roofTone,1.26), shade(fCol,0.8), shade(fCol,0.5));
+      box3d(sx+sw*0.66, yb+w.h*0.20, 18, 16, H+8, H+22, '#3d423c', '#2b2f2a', '#20231f');
+      if(r1<4){
+        capsule(sx+sw*0.30, yb+w.h*0.60, 15, 13, H+8, '#3a3d38', '#242622', '#4a4d46');
+        capsule(sx+sw*0.30, yb+w.h*0.60, 15, 13, H+58, '#3a3d38', '#242622', '#4a4d46');
+      }
+      box3d(sx+sw*0.88, yb+w.h*0.38, 2.5, 2.5, H+8, H+50, '#2a2d2a', '#1d201d', false);
+      /* tar seams across the roof, so the top is a surface and not a blank plane */
+      var seam=pj(sx+sw*0.46, yb+w.h*0.05, H+8);
+      for(var sm=0; sm<2; sm++){
+        var yy=yb+w.h*(0.36+sm*0.3);
+        quad(pj(sx+3,yy,H+8), pj(sx+sw-3,yy,H+8), pj(sx+sw-3,yy+3,H+8), pj(sx+3,yy+3,H+8), 'rgba(0,0,0,.16)');
+      }
+    }
   }
-  /* everything the block throws: rubble at the foot of the shopfronts */
+  /* rubble and boarding at the foot of the block */
   for(var b=0;b<3;b++){
-    var bx=w.x+((w.seed*13+b*61)%Math.max(1,w.w-24));
-    box3d(bx, front-6, 12+((w.seed+b*11)%10), 12, 0, 10+((w.seed+b*7)%12), '#4a4740', '#3a3731', '#2c2a25');
+    var bx=w.x+((seed*13+b*61)%Math.max(1,w.w-24));
+    box3d(bx, front-8, 12+((seed+b*11)%10), 10, 0, 8+((seed+b*7)%10), '#4a4740', '#3a3731', '#2c2a25');
   }
 }
 function faceS(){ }   /* kept for compatibility: windows are drawn with faceRect */
@@ -2732,7 +2849,11 @@ function drawLaser(){
     }
     if(kind) break;
   }
-  var m=pj(player.x+dx*22,player.y+dy*22,24), hp=pj(hx,hy,kind===2?14:2);
+  /* a dot on a wall sits at chest height, on a body it sits on the body, and only bare ground
+     gets a flat mark: the sight has to agree with the surface it is lying on */
+  var onWall=(kind===1 && hit && hit.style==='house');
+  var hitZ=kind===2?14:(onWall?26:2);
+  var m=pj(player.x+dx*22,player.y+dy*22,24), hp=pj(hx,hy,hitZ);
   ctx.setTransform(DPR,0,0,DPR,0,0);
   var lg=ctx.createLinearGradient(m[0],m[1],hp[0],hp[1]);
   lg.addColorStop(0,'rgba(255,74,52,.55)');
@@ -2743,7 +2864,7 @@ function drawLaser(){
   var upright=false;
   if(kind===1){
     var dl=hx-hit.x, dr=hit.x+hit.w-hx, dn=hy-hit.y, db=hit.y+hit.h-hy;
-    upright=Math.min(dl,dr)<Math.min(dn,db);
+    upright=Math.min(dl,dr)<Math.min(dn,db) || onWall;
   }
   var glow=ctx.createRadialGradient(hp[0],hp[1],0,hp[0],hp[1],13);
   glow.addColorStop(0,'rgba(255,96,62,.55)'); glow.addColorStop(1,'rgba(255,96,62,0)');
