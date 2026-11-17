@@ -1281,119 +1281,134 @@ function buildMazeWorld(){
    back off the pavement, with an alley or a yard behind - so there is always a way round a
    horde, and never a corridor you cannot back out of. */
 function buildCityWorld(theme){
-  var COLS=4, ROWS=3, PITCH=474, ROAD=152, WALK=26, T=40;
-  /* one street is the artery: twice the paint, twice the room, and every block hangs off it */
-  var MAINW=236, mainRow=1, WIDEN=(MAINW-ROAD)/2;
-  world.w=T*2+ROAD+COLS*PITCH;
-  world.h=T*2+ROAD+ROWS*PITCH;
+  /* ---------------- MISSION 1: one long street, on a tile grid ----------------
+     Everything is measured in tiles so the buildings sit on the grid and line up: a two tile
+     avenue down the middle, four tiles of building on each side, and side alleys cut exactly one
+     tile wide (the hidden one a little under). Only the layout changed. The walls are still the
+     same 'house' style, drawn by the same code, out of the same palette. */
+  var TILE=76;
+  var T=40;                       /* border wall */
+  var ROAD=TILE*2;                /* the street: two tiles, narrow */
+  var WALK=34;                    /* pavement between kerb and shopfront */
+  var BUILD=TILE*4;               /* four tiles of building on each side */
+  var COLS=1, ROWS=26;            /* one avenue, twenty-six tiles long */
+  var PITCH=TILE, MAINW=ROAD, mainRow=0;
+  world.w=T*2+BUILD*2+ROAD;
+  world.h=T*2+ROWS*TILE;
+  var i,j;
   walls=[]; gates=[]; chests=[]; hazards=[]; props=[]; zombies=[]; bullets=[]; parts=[];
   nades=[]; mines=[]; pickups=[]; fires=[]; solids=[]; lamps=[];
   walls.push({x:0,y:0,w:world.w,h:T,kind:'edge'},{x:0,y:world.h-T,w:world.w,h:T,kind:'edge'},
              {x:0,y:0,w:T,h:world.h,kind:'edge'},{x:world.w-T,y:0,w:T,h:world.h,kind:'edge'});
-  var SX=[],SY=[],i,r,c;
-  for(i=0;i<=COLS;i++) SX.push(T+ROAD/2+i*PITCH);
-  for(i=0;i<=ROWS;i++) SY.push(T+ROAD/2+i*PITCH);
-  var blocks=[];
-  for(r=0;r<ROWS;r++) for(c=0;c<COLS;c++){
-    var bx=SX[c]+ROAD/2+WALK, by=SY[r]+ROAD/2+WALK;
-    var bw0=SX[c+1]-ROAD/2-WALK-bx, bh0=SY[r+1]-ROAD/2-WALK-by;
-    /* the blocks either side of the artery give up their frontage to make it a boulevard */
-    if(r<mainRow) bh0-=WIDEN;                 /* the block above gives up its frontage */
-    else if(r===mainRow){ by+=WIDEN; bh0-=WIDEN; }  /* the block below gives up its frontage */
-    blocks.push({x:bx, y:by, w:bw0, h:bh0, r:r, c:c});
+  var SX=[T+BUILD+ROAD/2];            /* the single avenue */
+  var SY=[T+ROAD/2];                  /* one cross street at the north end: the T junction */
+  var leftFront=SX[0]-ROAD/2-WALK;    /* where the shopfronts stand */
+  var rightFront=SX[0]+ROAD/2+WALK;
+  var yTop=T, yBot=world.h-T;
+  var blocks=[], alleys=[];
+  /* ---- the two rows of buildings, cut by side alleys ----
+     A side is a run of solid blocks from the north end to the south end, interrupted by alleys
+     that run back to the map edge, so every alley is a dead end you have to back out of. */
+  function addHouse(x,y,w,h,lift){
+    walls.push({x:x,y:y,w:w,h:h,kind:'maze',style:'house',tone:R(),blown:R()<0.10,
+      seed:(x*13+y*7)|0,lift:lift});
   }
-  var open=[];
-  for(r=0;r<ROWS;r++){ open.push([]); for(c=0;c<COLS;c++) open[r].push({n:1,s:1,e:1,w:1}); }
-  mazeGrid={COLS:COLS,ROWS:ROWS,CELL:PITCH,T:T,open:open,dy:0,
-    city:{road:ROAD,mainRoad:MAINW,mainRow:mainRow,walk:WALK,sx:SX,sy:SY,blocks:blocks,plaza:null,loops:[]}};
-  /* one block is left empty as a square: somewhere to fight a horde in the open */
-  var plaza=blocks[Math.floor(R()*blocks.length)];
-  mazeGrid.city.plaza=plaza;
-  var alleys=[], loops=[];
-  function addBox(x,y,w,h,lift){
-    walls.push({x:x,y:y,w:w,h:h,kind:'maze',style:'house',tone:R(),blown:R()<0.18,
-      seed:(x*13+y*7)|0, lift:lift||0});
-  }
-  /* ---- a block is a storefront with a loop behind it ----
-     Front building on the street, a service alley behind it, then a rear building set in from
-     both side walls and from the back. The gutters that leaves are a circuit: you can walk in
-     from the pavement on one side, round the back of the shops, and out the other side. Nothing
-     dead-ends except the alley behind the shops, and that one is where the locked loot lives. */
-  var LOOP=38, ALLEY=44;
-  for(i=0;i<blocks.length;i++){
-    var b=blocks[i];
-    if(b===plaza) continue;
-    var m=24, x0=b.x+m, y0=b.y+m, bw=b.w-m*2, bh=b.h-m*2;
-    /* two to four storeys: a street of shops with flats over them, not one-storey slabs */
-    var storeys=3+Math.floor(R()*2)+(levelIndex>2?1:0);
-    var bigH=storeys*58+Math.floor(R()*18);
-    var deep=Math.round(bh*(0.38+R()*0.12));
-    /* a rear building only exists if a body can get round it on all three sides */
-    var maxDeep=bh-ALLEY-LOOP-64;
-    var rearY, rearH=0;
-    if(maxDeep>=56 && bw-LOOP*2>130){
-      deep=Math.min(deep,maxDeep);
-      rearY=y0+deep+ALLEY; rearH=bh-deep-ALLEY-LOOP;
-      addBox(x0, y0, bw, deep, bigH);
-      addBox(x0+LOOP, rearY, bw-LOOP*2, rearH, bigH*(0.58+R()*0.2));
-      loops.push({x:x0, y:rearY+rearH, w:bw, h:LOOP, cx:x0+bw*0.5, cy:rearY+rearH+LOOP*0.5,
-        side:'south', block:i});
-    } else {
-      /* a shallow block cannot hold a rear building: the back of it is an open court instead */
-      deep=Math.min(deep, bh-ALLEY-54);
-      rearY=y0+deep+ALLEY;
-      addBox(x0, y0, bw, deep, bigH);
-      loops.push({x:x0, y:rearY, w:bw, h:bh-deep-ALLEY, cx:x0+bw*0.5, cy:rearY+(bh-deep-ALLEY)*0.5,
-        side:'court', block:i});
+  var hiddenLeft=R()<0.5, hiddenIdx=1+Math.floor(R()*2);
+  /* two alleys run through: one on each side, never the hidden one, so the secret stays a
+     secret and every district has a way round a blocked road on both kerbs */
+  var throughLeft = hiddenLeft? 2 : 1;
+  var throughRight = hiddenLeft? 1 : 0;
+  function cutSide(left){
+    var x0 = left? T : rightFront;
+    var w  = left? (leftFront-T) : (world.w-T-rightFront);
+    var cuts = (left? [0.15,0.37,0.59,0.81] : [0.26,0.49,0.72]).slice();
+    var cur=yTop, k;
+    for(k=0;k<=cuts.length;k++){
+      var aw=0, ay=yBot+999;
+      if(k<cuts.length){
+        aw = (k===hiddenIdx && left===hiddenLeft)? 46 : ((left? throughLeft : throughRight)===k? 82 : 76);
+        ay = yTop+(yBot-yTop)*cuts[k]-aw*0.5;
+      }
+      var segH=ay-cur;
+      if(segH>190){
+        addHouse(x0,cur,w,segH,174+Math.floor(R()*118));
+        blocks.push({x:x0,y:cur,w:w,h:segH});
+      }
+      var thru = k<cuts.length && (left? throughLeft : throughRight)===k;
+      if(thru){
+        /* a through alley: the mouth, a turn behind the shops, and a second mouth three shops
+           further down. The deep half of the block stays solid, so it is a corridor, not a hole:
+           the player walks in at one mouth and out at the other, which is the detour a blocked
+           road needs. */
+        var IN=82, LANE=62, LEN=aw+LANE+aw;
+        var deepX = left? x0 : x0+IN;
+        addHouse(deepX, ay, w-IN, LEN, 174+Math.floor(R()*118));
+        alleys.push({x:x0, y:ay, w:w, h:aw, left:left, through:true, len:LEN, mouth2:ay+LEN-aw});
+        cur=ay+LEN;
+        k+=0;
+        continue;
+      }
+      if(k<cuts.length){
+        alleys.push({x:x0,y:ay,w:w,h:aw,left:left});
+        /* the hidden one: the two shops either side step out into the pavement, so from the
+           street you see a corner and a slot, not an opening */
+        if(aw<60){
+          var jd=WALK+8, jx = left? leftFront-jd : rightFront, jl=192+Math.floor(R()*40);
+          walls.push({x:jx,y:ay-42,w:jd,h:42,kind:'maze',style:'house',tone:0.62,
+            seed:(jx*7+ay*3)|0,lift:jl});
+          walls.push({x:jx,y:ay+aw,w:jd,h:42,kind:'maze',style:'house',tone:0.41,
+            seed:(jx*11+ay*5)|0,lift:jl});
+        }
+        cur=ay+aw;
+      }
     }
-    alleys.push({x:x0, y:y0+deep, w:bw, h:ALLEY});
   }
-  mazeGrid.city.loops=loops;
-  /* ---- locked yards: two barricades across an alley, a cache behind them ---- */
+  cutSide(true); cutSide(false);
+  /* ---- the doors that are locked: a breach gate across the mouth of an alley ---- */
   var gateKinds=['debris','door','power','vent'];
-  var lockCount=Math.min(alleys.length,1+Math.floor(levelIndex/2));
-  for(i=0;i<lockCount;i++){
-    var a=alleys[Math.floor(R()*alleys.length)];
-    if(!a||a.used) continue;
-    a.used=1;
+  var locked=0;
+  for(i=0;i<alleys.length && locked<2;i+=2){
+    var al=alleys[i];
+    if(al.through) continue;           /* a locked detour is not a detour */
     var need=gateKinds[Math.floor(R()*gateKinds.length)];
-    gates.push({x:a.x-1,y:a.y,w:26,h:a.h,kind:'gate',need:need,cx:a.x+12,cy:a.y+a.h/2,
-      prog:0,open:false,started:false});
-    gates.push({x:a.x+a.w-25,y:a.y,w:26,h:a.h,kind:'gate',need:need,cx:a.x+a.w-12,cy:a.y+a.h/2,
-      prog:0,open:false,started:false});
-    chests.push({x:a.x+a.w*0.5,y:a.y+a.h*0.5,r:15,got:false,v:55+levelIndex*18,locked:true});
+    var gx= al.left? leftFront-26 : rightFront;
+    gates.push({x:gx, y:al.y+5, w:26, h:al.h-10, kind:'gate', need:need,
+      cx:gx+13, cy:al.y+al.h/2, prog:0, open:false, started:false});
+    chests.push({x: al.left? al.x+74 : al.x+al.w-74, y:al.y+al.h/2, r:15, got:false,
+      v:55+levelIndex*18, locked:true});
+    al.gated=true;
+    locked++;
   }
-  /* loot tucked round the back: every other shop loop has something worth the detour */
-  for(i=0;i<loops.length;i++){
-    if(i%2) continue;
-    var lp0=loops[i];
-    chests.push({x:lp0.x+lp0.w*rnd(0.25,0.75), y:lp0.y+Math.min(lp0.h*0.5,18),
-      r:14, got:false, v:30+levelIndex*10, locked:false});
+  /* ---- loot at the back of the open alleys, where the dead end actually is ---- */
+  for(i=0;i<alleys.length;i++){
+    var ao=alleys[i];
+    if(ao.gated) continue;
+    /* the narrow hidden alley always has something at the end of it: that is the reward for
+       noticing the gap at all */
+    if(ao.h>=60 && R()<0.45) continue;
+    chests.push({x: ao.left? ao.x+70 : ao.x+ao.w-70, y:ao.y+ao.h/2, r:14, got:false,
+      v:30+levelIndex*10, locked:false});
   }
   /* open caches on the pavements, for the ones who did not need a tool */
   for(i=0;i<2;i++){
-    var cb=blocks[Math.floor(R()*blocks.length)];
-    chests.push({x:cb.x+16,y:cb.y-16,r:14,got:false,v:32+levelIndex*10,locked:false});
+    var sideP=R()<0.5;
+    chests.push({x: sideP? leftFront-16 : rightFront+16, y:rnd(yTop+120,yBot-120),
+      r:14, got:false, v:32+levelIndex*10, locked:false});
   }
-  /* ---- wherever a road runs, that is where things are ---- */
+  mazeGrid={COLS:COLS,ROWS:ROWS,CELL:PITCH,T:T,open:[[{n:1,s:1,e:1,w:1}]],dy:0,
+    city:{road:ROAD,mainRoad:MAINW,mainRow:mainRow,walk:WALK,sx:SX,sy:SY,blocks:blocks,
+      plaza:null,loops:[],alleys:alleys}};
+  /* ---- wherever the avenue runs, that is where things are ---- */
   function onStreet(){
-    if(R()<0.55){
-      var si=Math.floor(R()*(ROWS+1));
-      return {x:SX[0]+R()*(SX[COLS]-SX[0]), y:SY[si]+rnd(-ROAD*0.3,ROAD*0.3), vert:false};
-    }
-    var sj=Math.floor(R()*(COLS+1));
-    return {x:SX[sj]+rnd(-ROAD*0.3,ROAD*0.3), y:SY[0]+R()*(SY[ROWS]-SY[0]), vert:true};
+    return {x:SX[0]+rnd(-ROAD*0.30,ROAD*0.30), y:rnd(yTop+70,yBot-70), vert:true};
   }
   function onPavement(){
-    var pb=blocks[Math.floor(R()*blocks.length)];
-    var side=Math.floor(R()*4), d=rnd(6,WALK-6), t=rnd(30,pb.w-30);
-    if(side===0) return {x:pb.x+t, y:pb.y-d};
-    if(side===1) return {x:pb.x+t, y:pb.y+pb.h+d};
-    if(side===2) return {x:pb.x-d, y:pb.y+t};
-    return {x:pb.x+pb.w+d, y:pb.y+rnd(30,pb.h-30)};
+    var left=R()<0.5;
+    return {x: left? rnd(leftFront+4, SX[0]-ROAD/2-4) : rnd(SX[0]+ROAD/2+4, rightFront-4),
+            y: rnd(yTop+80, yBot-80)};
   }
   /* traffic that never moved again: along the kerbs, facing the way it was going */
-  for(i=0;i<16;i++){
+  for(i=0;i<18;i++){
     var cp=onStreet();
     props.push({x:cp.x,y:cp.y,w:72,h:36,r:26,kind:'car',hp:46,dead:false,rot:0,
       burnt:R()<0.42,crashed:R()<0.4,tilt:rnd(-0.12,0.12)});
@@ -1404,41 +1419,27 @@ function buildCityWorld(theme){
   for(i=0;i<9;i++){ var hpn=onStreet(); props.push({x:hpn.x,y:hpn.y,r:rnd(15,26),kind:'heap'}); }
   for(i=0;i<8;i++){ var sp2=onPavement(); props.push({x:sp2.x,y:sp2.y,r:7,kind:'sign',face:(i%2)}); }
   /* ---- chokepoints ---- a barrier is something the horde has to file past, not a wall it
-     cannot pass: two skip-sized blocks and a wreck either side of a gap you can still kite
-     through. They go on the artery and on the two cross streets, never in a doorway. */
-  function barrier(x,y,w,h){
-    /* a concrete lane divider, not a skip: low, heavy and striped, so the eye reads "closed" */
-    solids.push({x:x-w/2, y:y-h/2, w:w, h:h, kind:'jersey', body:'#a29e90', dark:'#57544b',
-      L:26, seed:(x*3+y*5)|0});
+     cannot pass: two concrete blocks either side of a gap you can still kite through. */
+  /* a barrier that leaves a lane: on a street this narrow the concrete goes against one kerb,
+     so the horde has to file past it instead of walking round a wide open road */
+  function barrier(x,y,vertical){
+    solids.push({x:x-(vertical?27:46), y:y-(vertical?46:27), w:vertical?54:92, h:vertical?92:54,
+      kind:'jersey', body:'#a29e90', dark:'#57544b', L:26, seed:(x*3+y*5)|0});
   }
   function wreck(x,y){
     props.push({x:x,y:y,w:72,h:36,r:26,kind:'car',hp:46,dead:false,rot:0,
       burnt:R()<0.45,crashed:true,tilt:rnd(-0.09,0.09)});
   }
-  function choke(x,y,alongY,gap){
-    var g=gap*0.5;
-    if(alongY){
-      barrier(x-g-46, y, 74, 54); barrier(x+g+46, y, 74, 54);
-      wreck(x-g-104, y); wreck(x+g+104, y);
-      props.push({x:x-g-30,y:y-34,r:9,kind:'cone'});
-      props.push({x:x+g+30,y:y+34,r:9,kind:'cone'});
-    } else {
-      barrier(x, y-g-46, 54, 74); barrier(x, y+g+46, 54, 74);
-      wreck(x, y-g-104); wreck(x, y+g+104);
-      props.push({x:x-34,y:y-g-30,r:9,kind:'cone'});
-      props.push({x:x+34,y:y+g+30,r:9,kind:'cone'});
-    }
+  /* three of them down the avenue, staggered left/right so the street snakes */
+  for(i=0;i<3;i++){
+    var cy2=yTop+(yBot-yTop)*(0.24+i*0.25)+rnd(-30,30);
+    var leftSide=(i%2)===0;
+    barrier(leftSide? leftFront+58 : rightFront-58, cy2, true);
+    wreck(leftSide? SX[0]+ROAD*0.16 : SX[0]-ROAD*0.16, cy2+rnd(-70,70));
+    props.push({x:leftSide? rightFront-20 : leftFront+20, y:cy2, r:9, kind:'cone'});
   }
-  /* down the artery, staggered so the boulevard snakes instead of funnelling */
-  for(i=0;i<COLS;i++){
-    var cxp=SX[i]+PITCH*0.5+rnd(-40,40);
-    choke(cxp, SY[mainRow]+((i%2)?rnd(30,46):-rnd(30,46)), false, 168);
-  }
-  /* and on the two cross streets, tighter, because those are the shortcuts */
-  choke(SX[1]+rnd(-24,24), SY[0]+PITCH*0.5, true, 142);
-  choke(SX[COLS-1]+rnd(-24,24), SY[ROWS]+PITCH*0.5, true, 142);
-  /* a crash burning at the mouth of a street, so the far end of the map has light on it */
-  var fireAt=onStreet();
+  /* a crash burning at the mouth of the street, so the far end has light on it */
+  var fireAt={x:SX[0]+rnd(-20,20), y:yTop+150};
   props.push({x:fireAt.x-46,y:fireAt.y,w:72,h:36,r:28,kind:'car',hp:46,dead:false,rot:0,burnt:true,crashed:false,tilt:0});
   props.push({x:fireAt.x+46,y:fireAt.y,w:72,h:36,r:28,kind:'car',hp:46,dead:false,rot:0,burnt:true,crashed:false,tilt:0});
   fires.push({x:fireAt.x, y:fireAt.y+4, r:26});
@@ -1454,46 +1455,48 @@ function buildCityWorld(theme){
   for(i=0;i<6;i++){
     var wp=onStreet(), spec=SOLIDS[Math.floor(R()*SOLIDS.length)];
     var along=Math.min(spec.long,240), across=Math.min(spec.short,58);
-    var ww=wp.vert?across:along, hh=wp.vert?along:across;
+    var ww=across, hh=along;                /* the avenue runs north-south, so they park longways */
     solids.push({x:wp.x-ww/2, y:wp.y-hh/2, w:ww, h:hh, kind:spec.k,
       body:spec.body, dark:spec.dark, L:spec.L, seed:(wp.x*7+wp.y*3)|0});
   }
-  /* one articulated lorry jack-knifed across the artery and burning: the loudest object on the
-     map, and the thing you can see from three streets away */
-  var semiX=SX[Math.floor(SX.length/2)]+rnd(-30,30), semiY=SY[mainRow]+PITCH*0.5+rnd(-26,26);
-  var semiW=Math.min(212,(MAINW||ROAD)-16);
+  /* one articulated lorry jack-knifed across the avenue and burning: it seals all but one lane */
+  var semiY=yTop+(yBot-yTop)*0.56;
+  var semiX=SX[0]-ROAD*0.18, semiW=ROAD-64;
   solids.push({x:semiX-semiW/2, y:semiY-31, w:semiW, h:62, kind:'semi',
     body:'#8b8578', dark:'#4f4a42', L:44, seed:(semiX*3+semiY)|0});
   fires.push({x:semiX+semiW*0.30, y:semiY+12, r:30});
-  props.push({x:semiX-semiW*0.5-40, y:semiY+28, w:56, h:30, r:22, kind:'car', hp:46,
+  props.push({x:semiX+semiW*0.5+34, y:semiY+26, w:56, h:30, r:22, kind:'car', hp:46,
     dead:false, rot:0, burnt:true, crashed:true, tilt:0, alarmHit:false});
-  /* ---- chain link ----  construction fencing and burnt hoarding running along the kerb, one
-     run per couple of blocks. It does not seal a street; it takes a lane out of it, which is what
-     makes a wide road feel like a corridor and a horde feel like a squeeze. */
-  for(i=0;i<blocks.length;i++){
-    if(R()<0.42) continue;
-    var fb=blocks[i], south=R()<0.62;
-    var fx0=fb.x+rnd(20,60), flen=Math.min(fb.w-60, rnd(120,230));
-    var fyY=clamp(south? fb.y+fb.h+WALK+11 : fb.y-WALK-11, 60, world.h-60);
-    if(fx0<70||fx0+flen>world.w-70||fyY<70||fyY>world.h-70) continue;
-    walls.push({x:fx0, y:fyY-5, w:flen, h:10, kind:'maze', style:'fence', lift:46,
-      tone:0.5, seed:(fx0*5+fyY*3)|0});
+  /* ---- chain link ----  construction fencing along the kerb, a lane taken out of the street */
+  function mouthFree(left, y0, y1){
+    for(var m=0;m<alleys.length;m++){
+      var av=alleys[m];
+      if(av.left!==left) continue;
+      if(y1>av.y-40 && y0<av.y+(av.len||av.h)+40) return false;
+    }
+    return true;
+  }
+  for(i=0;i<3;i++){
+    var flen=rnd(150,260), fyY=yTop+200+i*((yBot-yTop-400)/3)+rnd(-60,60);
+    var fLeft=(i%2)===1;
+    var flx= fLeft? leftFront+WALK*0.5 : rightFront-WALK*0.5;
+    if(!mouthFree(fLeft, fyY-5, fyY+flen)) continue;   /* never seal an alley mouth by accident */
+    walls.push({x:clamp(flx,60,world.w-60), y:fyY-5, w:10, h:flen, kind:'maze', style:'fence',
+      lift:46, tone:0.5, seed:(fyY*5+flx*3)|0});
   }
   /* ---- security gates ---- a chain-link panel dropped across a pavement on its own feet. It
-     seals a shortcut until you put enough rounds through the mesh, so the quiet route costs
-     noise. Movement blocks on the solid; the panel is destroyed through the prop. ---- */
+     seals a shortcut until you put enough rounds through the mesh. ---- */
   for(i=0;i<3;i++){
-    var gp0=onPavement();
-    var gv=R()<0.5, gl=118;
-    var gw2=gv?14:gl, gh2=gv?gl:14;
-    if(gp0.x-gw2/2<70||gp0.x+gw2/2>world.w-70||gp0.y-gh2/2<70||gp0.y+gh2/2>world.h-70) continue;
-    var gsol={x:gp0.x-gw2/2, y:gp0.y-gh2/2, w:gw2, h:gh2, noDraw:true};
+    var gside=i%2, gy2=yTop+220+i*((yBot-yTop-440)/3)+rnd(-40,40);
+    var gw2=14, gh2=118;
+    var gx2= gside? rightFront-WALK*0.5 : leftFront+WALK*0.5;
+    if(!mouthFree(!gside, gy2-gh2/2, gy2+gh2/2)) continue;
+    var gsol={x:gx2-gw2/2, y:gy2-gh2/2, w:gw2, h:gh2, noDraw:true};
     solids.push(gsol);
-    props.push({x:gp0.x, y:gp0.y, w:gw2, h:gh2, r:Math.max(gw2,gh2)*0.5,
-      kind:'secgate', hp:96, box:true, sol:gsol, dead:false});
+    props.push({x:gx2, y:gy2, w:gw2, h:gh2, r:gh2*0.5, kind:'secgate', hp:96, box:true,
+      sol:gsol, dead:false});
   }
-  /* ---- vending machines ---- a lit cabinet is a landmark in the dark. Shoot it open and the
-     street comes running; crack it by hand and there is something in it for you. ---- */
+  /* ---- vending machines ---- a lit cabinet is a landmark in the dark ---- */
   for(i=0;i<3;i++){
     var vp0=onPavement();
     props.push({x:vp0.x, y:vp0.y, r:13, kind:'vending', hp:58, dead:false});
@@ -1502,13 +1505,14 @@ function buildCityWorld(theme){
   /* spikes and fire on the asphalt, never under the spawn */
   var hazCount=2+Math.floor(levelIndex/3)*2;
   for(i=0;i<hazCount;i++){ var hp2=onStreet(); hazards.push({x:hp2.x,y:hp2.y,r:rnd(26,38),t:0}); }
-  /* lamps at the corners, which is where a city puts them */
+  /* lamps down both pavements, one a block, which is where a city puts them */
   for(i=0;i<blocks.length;i++){
     var lb=blocks[i];
-    lamps.push({x:lb.x-16, y:lb.y-16, r:rnd(138,172)});
-    if(i%2===0) lamps.push({x:lb.x+lb.w+16, y:lb.y+lb.h+16, r:rnd(132,164)});
+    if(lb.x<T+60) lamps.push({x:leftFront+12, y:lb.y+26, r:rnd(138,172)});
+    else lamps.push({x:rightFront-12, y:lb.y+26, r:rnd(138,172)});
+    lamps.push({x: lb.x<T+60? leftFront+12 : rightFront-12, y:lb.y+lb.h-26, r:rnd(132,164)});
   }
-  player={x:SX[Math.floor(COLS/2)], y:SY[Math.floor(ROWS/2)], vx:0,vy:0,r:13,aim:-Math.PI/2,
+  player={x:SX[0], y:yTop+ROAD*1.2, vx:0,vy:0,r:13,aim:-Math.PI/2,
     firing:false,hp:1,max:1,cd:0,ammo:0,mag:0,reloading:0,inv:0,spT:0,shield:0,dash:0,stun:0,trail:0};
 }
 
@@ -4564,7 +4568,7 @@ scene='menu';
 requestAnimationFrame(frame);
 
 /* debug + test surface */
-window.__dbg={ walls:function(){return walls;}, player:function(){return player;}, maze:function(){return mazeGrid;}, lvl:function(){return level;}, warp:function(x,y){ if(player){ player.x=x; player.y=y; } } };
+window.__dbg={ walls:function(){return walls;}, player:function(){return player;}, maze:function(){return mazeGrid;}, lvl:function(){return level;}, warp:function(x,y){ if(player){ player.x=x; player.y=y; } }, proj:function(x,y,z){ return pj(x,y,z||0); } };
 window.__dn={
   state:function(){ return {scene:scene,mode:mode,char:save.char,hp:player?Math.round(player.hp):0,
     max:player?player.max:0,zombies:zombies.length,queue:waveQueue.length,bullets:bullets.length,
