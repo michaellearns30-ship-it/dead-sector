@@ -2647,9 +2647,15 @@ function drawSolid(o){
 }
 function drawLamp(lp){
   var f=(lp.f==null?1:lp.f);
-  box3d(lp.x-2, lp.y-2, 4, 4, 0, 150, '#31353b', '#1e2126', false);
+  /* a street light, not a bollard: a slim dark post, an arm over the kerb, a shade, a bulb.
+     Thin and dark matters - a fat pale post a few paces from the camera reads as a grey bar
+     lying across the street. */
+  box3d(lp.x-1.3, lp.y-1.3, 2.6, 2.6, 0, 132, '#2c3137', '#1a1e22', false);
+  box3d(lp.x-1.3, lp.y-9, 2.6, 8, 128, 131, '#363c43', '#22272c', false);      /* arm */
+  box3d(lp.x-7, lp.y-15, 14, 9, 128, 137,
+    f>0.55?'#4a4238':shade('#4a4238',0.5+0.4*f), '#2b2822', '#1c1a16');          /* shade */
   /* the bulb browns out with the pool under it */
-  box3d(lp.x-10, lp.y-5, 20, 10, 150, 158,
+  box3d(lp.x-4, lp.y-11, 8, 5, 124, 129,
     f>0.55?'#ffd9a0':shade('#ffd9a0',0.35+0.5*f), shade('#b99668',0.35+0.5*f), shade('#8f7448',0.3+0.55*f));
 }
 
