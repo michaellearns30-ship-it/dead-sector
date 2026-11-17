@@ -443,21 +443,21 @@ function refillAmmo(boost){
 /* the route out: suburbs, then the city that is worse, then the harbour that is burned,
    then inland through trees with no lights. Each sector sets its own darkness. */
 var LEVELS=[
-  {name:'Maple Row',theme:'city',amb:0.34,reveal:300,waves:[8,12,16],boss:false,
+  {name:'Maple Row',dist:'SUBURBS',campaign:true,cp:4,theme:'city',amb:0.34,reveal:300,waves:[8,12,16],boss:false,
    story:'It went quiet on a Tuesday. Nobody rang a bell to say why, and the curtains are all still drawn.\n\nLeft thumb moves, right thumb aims and fires. Your torch finds the rest.'},
-  {name:'Cul-de-Sac',theme:'city',amb:0.36,reveal:292,waves:[12,16,20],boss:false,
+  {name:'Cul-de-Sac',dist:'SUBURBS',campaign:true,cp:4,theme:'city',amb:0.36,reveal:292,waves:[12,16,20],boss:false,
    story:'Every car on the street is packed and pointed the wrong way. Someone left in a hurry and did not get far.\n\nKeep moving. Standing still is how you die out here.'},
-  {name:'City Outskirts',theme:'city',amb:0.40,reveal:282,waves:[16,20,24],boss:false,
+  {name:'City Outskirts',dist:'CITY',campaign:true,cp:4,theme:'city',amb:0.40,reveal:282,waves:[16,20,24],boss:false,
    story:'You came for the evacuation point. The city is worse than the suburbs ever were — the streets are full, and nothing in them is moving but them.\n\nThe harbour is the only way out now.'},
-  {name:'The Harbour',theme:'city',amb:0.42,reveal:272,waves:[16,22,26],boss:false,harbour:true,
+  {name:'The Harbour',dist:'HARBOR',campaign:true,cp:4,theme:'city',amb:0.42,reveal:272,waves:[16,22,26],boss:false,harbour:true,
    story:'The boats are burning bow to stern. Someone set the berths alight so nothing could leave by water.\n\nThere is no sea route. The only way left runs inland, into the trees.'},
-  {name:'Harbour Wall',theme:'city',amb:0.44,reveal:264,waves:[20,26,30],boss:true,harbour:true,
+  {name:'Harbour Wall',dist:'HARBOR',campaign:true,cp:4,theme:'city',amb:0.44,reveal:264,waves:[20,26,30],boss:true,harbour:true,
    story:'Something on the docks has been feeding well and does not intend to share the road out.\n\nPut it down, then get to the treeline before the fires die.'},
-  {name:'Treeline',sky:[0.78,0.4],theme:'forest',amb:0.62,reveal:190,eyes:0.75,waves:[20,26,30],boss:false,
+  {name:'Treeline',dist:'FOREST',campaign:true,cp:4,sky:[0.78,0.4],theme:'forest',amb:0.62,reveal:190,eyes:0.75,waves:[20,26,30],boss:false,
    story:'No streetlights past the last fence. No windows, no fire, no moon worth the name.\n\nYour torch is the only light for miles, and it only reaches so far.'},
-  {name:'The Deep Wood',sky:[0.9,0.56],theme:'forest',amb:0.70,reveal:160,eyes:0.5,waves:[24,30,34],boss:false,
+  {name:'The Deep Wood',dist:'FOREST',campaign:true,cp:4,sky:[0.9,0.56],theme:'forest',amb:0.70,reveal:160,eyes:0.5,waves:[24,30,34],boss:false,
    story:'You hear them before the beam finds them, and some of the time you do not hear them at all. An eye catches the light half a second before the rest of it does.\n\nKeep the beam moving.'},
-  {name:'The Last Road',sky:[0.74,0.34],theme:'forest',amb:0.66,reveal:175,eyes:0.7,waves:[28,34],boss:true,
+  {name:'The Last Road',dist:'FOREST',campaign:true,cp:4,sky:[0.74,0.34],theme:'forest',amb:0.66,reveal:175,eyes:0.7,waves:[28,34],boss:true,
    story:'The trees thin out onto a road that still has paint on it. Whatever is walking it came a long way to be here.\n\nThis is the last of it.'}
 ];
 
@@ -532,6 +532,11 @@ var solids=[], lamps=[];      /* wrecked vehicles that block the street, and the
 var level=null, levelIndex=0, waveIndex=0, waveQueue=[], spawnTimer=0, cleared=false;
 /* hordes arrive as squads off the edge of the frame, not one at a time */
 var squadPack=0;
+/* ---- the campaign: a route through a district, not a wave counter ----
+   route = {pts:[{x,y,r}], final:{x,y}, done, total, district, boss}. pts[0] is the next
+   checkpoint and the last one is the extraction point for the district. */
+var route=null, blockers=[], ambushCd=0, trickleT=0, noisePts=[];
+var RSTEP=26;
 /* a gunshot is a light: it lifts the street for a few frames instead of only decalling it */
 var flashLight={t:0,x:0,y:0}, muzzleT=0;
 /* every temporary light in the fight: a muzzle, a blast, an arming car. Flares keep their own
@@ -1391,7 +1396,7 @@ function finishWorld(){
     for(i0=0;i0<3;i0++){
       fires.push({x:rnd(140,world.w-140), y:WATER+rnd(90,world.h-WATER-90), r:rnd(56,84)});
     }
-    player.y=WATER+CELL/2;   /* start on the quay, looking at what is left of the boats */
+    player.y=WATER+96;   /* start on the quay, looking at what is left of the boats */
     if(mazeGrid) mazeGrid.dy=WATER;   /* the road markings follow the streets inland */
   }
   /* ---- loose loot: crates the living dropped, or the dead left where they fell ---- */
@@ -1443,10 +1448,284 @@ function startLevel(idx){
   buildWorld(level.theme, mode==='daily'?dailySeed:0);
   applyUpgrades();
   waveQueue=[]; spawnTimer=.6;
-  nextWave();
+  if(level.campaign) beginCampaign(); else nextWave();
   scene='play';
   $('hud').classList.add('on'); $('ui').hidden=true;
   hud();
+}
+
+/* ================== campaign: routes, blockades, ambushes ==================
+   A district is a path through the streets the generator actually built, not a box with a spawn
+   timer. Checkpoints sit on that path, so every one of them is walkable by construction. When a
+   scripted event drops a barricade the route is replanned from where the player stands, and the
+   barricade is only allowed to stay if a way round still exists - which is what turns a blocked
+   main road into a detour through the alley behind the shops. */
+var EVENTS={
+  SUBURBS:['pipe','alarm','overpass'],
+  CITY:['alarm','overpass','pipe'],
+  HARBOR:['pipe','overpass','alarm'],
+  FOREST:['treefall','treefall','overpass']
+};
+var EV_TXT={
+  pipe:'MAIN BURST · the road is gone. Take the alley.',
+  alarm:'CAR ALARM · every street around here just heard that.',
+  overpass:'OVERPASS DOWN · the street is choked. Round the back.',
+  treefall:'TREES ACROSS THE ROAD · go round.'
+};
+function openCell(x,y){ return x>26&&y>26&&x<world.w-26&&y<world.h-26 && !inWall(x,y,15); }
+/* breadth-first over a coarse grid of the real collision map */
+function bfsField(sx,sy){
+  var cols=Math.ceil(world.w/RSTEP), rows=Math.ceil(world.h/RSTEP), n=cols*rows;
+  var prev=new Int32Array(n).fill(-2), dist=new Int32Array(n).fill(-1), q=[], qh=0;
+  var c0=clamp(Math.round(sx/RSTEP),0,cols-1), r0=clamp(Math.round(sy/RSTEP),0,rows-1), si=-1;
+  if(openCell(c0*RSTEP,r0*RSTEP)) si=r0*cols+c0;
+  else for(var rr=1;rr<7&&si<0;rr++){
+    for(var dy=-rr;dy<=rr&&si<0;dy++) for(var dx=-rr;dx<=rr&&si<0;dx++){
+      var cc=c0+dx, rww=r0+dy;
+      if(cc<0||rww<0||cc>=cols||rww>=rows) continue;
+      if(openCell(cc*RSTEP,rww*RSTEP)) si=rww*cols+cc;
+    }
+  }
+  if(si<0) return null;
+  prev[si]=-1; dist[si]=0; q.push(si);
+  var far=si, farD=0;
+  while(qh<q.length){
+    var cur=q[qh++], cx=cur%cols, cy=(cur-cx)/cols, cd=dist[cur];
+    for(var k=0;k<4;k++){
+      var nx=cx+(k===0?1:k===1?-1:0), ny=cy+(k===2?1:k===3?-1:0);
+      if(nx<0||ny<0||nx>=cols||ny>=rows) continue;
+      var ni=ny*cols+nx;
+      if(prev[ni]!==-2) continue;
+      if(!openCell(nx*RSTEP,ny*RSTEP)){ prev[ni]=-3; continue; }
+      prev[ni]=cur; dist[ni]=cd+1; q.push(ni);
+      if(cd+1>farD){ farD=cd+1; far=ni; }
+    }
+  }
+  return {prev:prev,dist:dist,cols:cols,rows:rows,far:far,farD:farD,si:si};
+}
+function cellPt(f,idx){ var c=idx%f.cols; return [c*RSTEP, ((idx-c)/f.cols)*RSTEP]; }
+function pathTo(f,tx,ty){
+  if(!f) return null;
+  var tc=clamp(Math.round(tx/RSTEP),0,f.cols-1), tr=clamp(Math.round(ty/RSTEP),0,f.rows-1), ti=tr*f.cols+tc;
+  if(f.dist[ti]<0){
+    var best=-1, bd=99;
+    for(var dy=-4;dy<=4;dy++) for(var dx=-4;dx<=4;dx++){
+      var cc=tc+dx, rr=tr+dy;
+      if(cc<0||rr<0||cc>=f.cols||rr>=f.rows) continue;
+      var ii=rr*f.cols+cc; if(f.dist[ii]<0) continue;
+      var d2=dx*dx+dy*dy; if(d2<bd){ bd=d2; best=ii; }
+    }
+    if(best<0) return null;
+    ti=best;
+  }
+  var out=[], cur=ti, guard=0;
+  while(cur>=0 && guard++<6000){ out.push(cellPt(f,cur)); cur=f.prev[cur]; }
+  if(out.length<2) return null;
+  out.reverse();
+  /* keep the corners only: a route that reads as streets instead of a staircase */
+  var pts=[out[0]];
+  for(var i=1;i<out.length-1;i++){
+    var A=out[i-1], B=out[i], C=out[i+1];
+    if((B[0]-A[0])*(C[1]-B[1])-(B[1]-A[1])*(C[0]-B[0])!==0) pts.push(B);
+  }
+  pts.push(out[out.length-1]);
+  return pts;
+}
+/* n checkpoints spaced by distance along the polyline */
+function routePoints(pts,n){
+  var segs=[], total=0, i;
+  for(i=1;i<pts.length;i++){
+    var d=Math.sqrt(dist2(pts[i][0],pts[i][1],pts[i-1][0],pts[i-1][1]));
+    segs.push(d); total+=d;
+  }
+  if(!segs.length) return [{x:pts[0][0],y:pts[0][1],r:70}];
+  var out=[];
+  for(var k=1;k<=n;k++){
+    var want=total*k/n, acc=0, si=0;
+    while(si<segs.length-1 && acc+segs[si]<want){ acc+=segs[si]; si++; }
+    var t=Math.min(1,(want-acc)/(segs[si]||1));
+    var p1=pts[si], p2=pts[si+1]||pts[si];
+    out.push({x:p1[0]+(p2[0]-p1[0])*t, y:p1[1]+(p2[1]-p1[1])*t, r:70});
+  }
+  return out;
+}
+function planRoute(fromX,fromY,n){
+  var f=bfsField(fromX,fromY);
+  if(!f) return null;
+  var far=cellPt(f,f.far);
+  var path=pathTo(f,far[0],far[1]);
+  if(!path||path.length<2) return null;
+  return {pts:routePoints(path,n), final:{x:far[0],y:far[1]}, path:path};
+}
+function beginCampaign(){
+  /* never start a district wedged in a wall: the route is planned from an open cell, so the
+     player starts on one too */
+  if(inWall(player.x,player.y,14)){
+    for(var na=0;na<24;na++){
+      var aa2=na*(Math.PI*2/24);
+      for(var nd=20;nd<=160;nd+=20){
+        var nx2=clamp(player.x+Math.cos(aa2)*nd,60,world.w-60), ny2=clamp(player.y+Math.sin(aa2)*nd,60,world.h-60);
+        if(!inWall(nx2,ny2,16)){ player.x=nx2; player.y=ny2; na=99; break; }
+      }
+    }
+  }
+  var plan=planRoute(player.x,player.y,Math.max(2,level.cp||4));
+  if(!plan){
+    /* nothing reachable at all: fall back to a straight run north so the district is still playable */
+    plan={pts:[], final:{x:player.x,y:Math.max(120,player.y-600)}, path:null};
+    for(var k=1;k<=(level.cp||4);k++) plan.pts.push({x:player.x,y:Math.max(120,player.y-150*k),r:80});
+  }
+  route={pts:plan.pts, final:plan.final, done:0, total:plan.pts.length,
+         district:level.dist||'CITY', boss:false};
+  blockers=[]; ambushCd=0; trickleT=7; noisePts=[];
+  /* the street is not empty when you arrive, but nothing arrives on a clock either */
+  ambush(player.x,player.y,3);
+}
+function replan(remaining){
+  if(!route) return false;
+  var plan=planRoute(player.x,player.y,Math.max(1,remaining));
+  if(plan && plan.pts.length){ route.pts=plan.pts; return true; }
+  route.pts=route.pts.slice(1);
+  return false;
+}
+function narrowHere(x,y){
+  var l=inWall(x-46,y,0), r=inWall(x+46,y,0), u=inWall(x,y-46,0), d=inWall(x,y+46,0);
+  return (l&&r)||(u&&d);
+}
+function noiseAt(x,y,n){
+  if(!level||!level.campaign) return;
+  if(noisePts.length<4) noisePts.push({x:x,y:y,n:n||2});
+}
+/* a squad, not a fog bank: they come in from off the frame around a point */
+function ambush(x,y,n){
+  n=Math.min(n||3, 26-zombies.length);
+  if(n<=0) return 0;
+  var pool=level.theme==='forest'?['walker','walker','runner','brute','spit']
+                                 :['walker','walker','walker','runner','brute','spit'];
+  var made=0;
+  for(var i=0;i<n;i++){
+    var a=R()*6.283, d=rnd(300,540);
+    var ax=clamp(x+Math.cos(a)*d,60,world.w-60), ay=clamp(y+Math.sin(a)*d,60,world.h-60);
+    if(inWall(ax,ay,22)){
+      ax=clamp(x+Math.cos(a)*240,60,world.w-60); ay=clamp(y+Math.sin(a)*240,60,world.h-60);
+      if(inWall(ax,ay,18)) continue;
+    }
+    spawnZombie(pool[Math.floor(R()*pool.length)],{x:ax,y:ay});
+    made++;
+  }
+  squadPack=made;
+  return made;
+}
+/* reachability that treats "already standing on it" as reachable */
+function reachOK(f,tx,ty){
+  if(!f) return false;
+  if(dist2(player.x,player.y,tx,ty)<60*60) return true;
+  return !!pathTo(f,tx,ty);
+}
+/* a barricade that is only allowed to exist if the way round does */
+function placeBlockade(kind,ang){
+  var vert=Math.abs(Math.sin(ang))>Math.abs(Math.cos(ang));
+  var bw=vert?176:30, bh=vert?30:176;
+  var bx=player.x+Math.cos(ang)*146, by=player.y+Math.sin(ang)*146;
+  /* the checkpoint to prove reachable is the one after this event, not the one you are on */
+  var T=route.pts[1]||route.pts[0];
+  for(var t=0;t<3;t++){
+    if(!openCell(bx,by)) return null;
+    var w={x:bx-bw/2,y:by-bh/2,w:bw,h:bh,kind:'block',style:kind,tone:R(),
+           seed:(bx*7+by*3)|0,lift:(kind==='overpass'?66:(kind==='alarm'?44:26))};
+    walls.push(w); blockers.push(w);
+    if(T){
+      var f=bfsField(player.x,player.y);
+      if(reachOK(f,T.x,T.y)) return w;               /* there is still a way round */
+    } else return w;
+    walls.splice(walls.indexOf(w),1); blockers.splice(blockers.indexOf(w),1);
+    bw=Math.round(bw*0.6); bh=Math.round(bh*0.6);
+  }
+  return null;
+}
+function fireEvent(k){
+  var kinds=EVENTS[route.district]||EVENTS.CITY;
+  var kind=kinds[k%kinds.length];
+  var T=route.pts[1]||route.pts[0];
+  var ang=T?Math.atan2(T.y-player.y,T.x-player.x):-Math.PI/2;
+  var w=placeBlockade(kind,ang);
+  var bx=w?w.x+w.w*0.5:player.x+Math.cos(ang)*146;
+  var by=w?w.y+w.h*0.5:player.y+Math.sin(ang)*146;
+  /* the event is loud and visible before it is lethal */
+  for(var i=0;i<26;i++){
+    var a=R()*6.283, sp2=rnd(40,220);
+    parts.push({x:bx+rnd(-24,24),y:by+rnd(-24,24),vx:Math.cos(a)*sp2,vy:Math.sin(a)*sp2,
+      life:rnd(.3,.8),r:rnd(1.6,4.4),c:kind==='pipe'?'#9fc6d2':kind==='alarm'?'#ffb060':'#c9c2b0',kind:'spark'});
+  }
+  if(dynLights.length<10) dynLights.push({x:bx,y:by,r:210,t:.5,dur:.5,pw:.9,
+    c:kind==='alarm'?'#ff8a4a':'#cfe6ea'});
+  booms.push({x:bx,y:by,r:150,max:340,t:0,dur:.7,heavy:false});
+  shake=Math.min(shake+4,9);
+  beep(kind==='alarm'?520:180, .16, .09, kind==='alarm'?'square':'sawtooth');
+  showTut(EV_TXT[kind]||'THE ROAD IS BLOCKED');
+  ambush(bx,by, 6+Math.min(6,k*2));
+}
+function reachCheckpoint(){
+  if(!route) return;
+  var last=(route.pts.length<=1), i;
+  if(last){
+    if(level.boss && !route.boss){
+      route.boss=true;
+      spawnZombie('boss',{x:route.pts[0].x, y:route.pts[0].y-130});
+      showTut('GATEKEEPER · nothing leaves until it is down');
+      hud();
+      return;
+    }
+    if(level.boss){
+      var alive=false;
+      for(i=0;i<zombies.length;i++) if(zombies[i].type==='boss'&&!zombies[i].dead) alive=true;
+      if(alive) return;
+    }
+    finishLevel();
+    return;
+  }
+  fireEvent(route.done);
+  route.done++;
+  var remain=route.pts.length-1;
+  route.pts=route.pts.slice(1);
+  replan(remain);
+  hud();
+}
+function campaignTick(dt){
+  if(!route) return;
+  var T=route.pts[0];
+  if(T && dist2(player.x,player.y,T.x,T.y)<T.r*T.r) reachCheckpoint();
+  ambushCd=Math.max(0,ambushCd-dt);
+  /* where you are standing is the trigger: a narrow passage with the torch off is a trap */
+  if(ambushCd<=0 && zombies.length<10 && narrowHere(player.x,player.y)){
+    if((player.lightOn===false) || (level.amb||0.34)>0.5){
+      if(ambush(player.x,player.y,3+Math.floor(R()*3))) ambushCd=15+R()*10;
+    }
+  }
+  /* noise: a shot or a blast is a dinner bell for whatever is nearest it */
+  if(noisePts.length && ambushCd<=0 && zombies.length<15){
+    var np=noisePts.shift();
+    if(dist2(np.x,np.y,player.x,player.y)<560*560){
+      if(ambush(np.x,np.y,np.n)) ambushCd=9+R()*6;
+    }
+  }
+  /* stragglers, not waves: a couple at a time, and only when the street has gone quiet */
+  trickleT-=dt;
+  if(trickleT<=0){
+    trickleT=24+R()*14;
+    if(zombies.length<5) ambush(player.x,player.y,1+Math.floor(R()*2));
+  }
+  /* a burst main keeps steaming, a wrecked car keeps flashing */
+  for(var b0=0;b0<blockers.length;b0++){
+    var bk=blockers[b0];
+    if(!onScreen(bk.x+bk.w*0.5,bk.y+bk.h*0.5,120)) continue;
+    if(bk.style==='pipe' && R()<0.4){
+      parts.push({x:bk.x+bk.w*0.5+rnd(-8,8),y:bk.y+bk.h*0.5+rnd(-6,6),vx:rnd(-18,18),vy:rnd(-60,-24),
+        life:rnd(.5,1.1),r:rnd(2,5),c:'rgba(200,222,228,.5)',kind:'spark'});
+    } else if(bk.style==='alarm' && R()<0.10 && dynLights.length<10){
+      dynLights.push({x:bk.x+bk.w*0.5,y:bk.y+bk.h*0.5,r:120,t:.16,dur:.16,pw:.6,c:'#ffb060'});
+    }
+  }
 }
 function nextWave(){
   var arr=level.waves;
@@ -1615,6 +1894,7 @@ function fire(ax,ay){
   }
   shake=Math.min(shake+1.6,7);
   muzzleT=0.075;
+  if(level&&level.campaign&&R()<0.4) noiseAt(player.x,player.y,2);
   flashLight.t=0.10; flashLight.x=player.x+Math.cos(a)*24; flashLight.y=player.y+Math.sin(a)*24;
   /* the muzzle is a real light and it cuts the dark, it does not just sit on top of it */
   if(dynLights.length<8) dynLights.push({x:player.x+Math.cos(a)*22,y:player.y+Math.sin(a)*22,
@@ -1662,6 +1942,7 @@ function placeMine(){
 }
 function explode(x,y,radius,dmg,kind){
   var heavy=radius>=160;
+  noiseAt(x,y,heavy?4:2);
   for(var i=0;i<(heavy?38:26);i++){
     var a=R()*Math.PI*2, s=rnd(60,320);
     parts.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.25,.7),r:rnd(2,6),
@@ -1876,8 +2157,9 @@ function update(dt){
       hud();
     }
   }
-  /* spawn */
-  if(waveQueue.length){
+  /* spawn: the campaign spawns on where you are and what you just did, never on a clock */
+  if(level.campaign){ campaignTick(dt); }
+  else if(waveQueue.length){
     spawnTimer-=dt;
     if(spawnTimer<=0 && zombies.length<28){
       /* a wave is a handful of squads, not a queue of singles: they arrive together, from
@@ -2096,8 +2378,8 @@ function update(dt){
   var tc0=0,tc1=0,tc2=0;
   for(var zt=0;zt<zombies.length;zt++){ var tz=zombies[zt].tier||2; if(tz===2) tc2++; else if(tz===1) tc1++; else tc0++; }
   window.__stats={zombies:zombies.length,active:tc2,dormant:tc1,sleeping:tc0};
-  /* wave / level end */
-  if(!waveQueue.length && zombies.length===0 && !cleared){
+  /* wave / level end: arcade modes only. The campaign ends at its extraction point. */
+  if(!level.campaign && !waveQueue.length && zombies.length===0 && !cleared){
     if(waveIndex < level.waves.length) nextWave();
     else finishLevel();
   }
@@ -2388,10 +2670,53 @@ var HOUSE_TONES=['#413d36','#4d453c','#3d423d','#4f463c','#463f37'];
 function drawWallBox(w){
   var s=w.style;
   if(s==='pit') return;
+  if(s==='pipe'||s==='overpass'||s==='alarm'||s==='treefall') return drawBlocker(w);
   if(s==='rubble') return drawRubble(w);
   if(s==='wreck') return drawWreck(w);
   if(s==='logjam') return drawLogjam(w);
   return drawHouse(w);
+}
+/* the things a scripted event drops across a street */
+function drawBlocker(w){
+  var s=w.style, x=w.x, y=w.y, ww=w.w, hh=w.h, horiz=ww>=hh, i;
+  if(s==='overpass'){
+    /* a slab of the span, deck down, rebar in the air */
+    box3d(x, y+hh*0.10, ww, hh*0.76, 0, 52, '#6d6b62', '#4b4a44', '#3b3a35');
+    box3d(x+ww*0.05, y+hh*0.18, ww*0.88, hh*0.5, 52, 64, '#7d7b70', '#585650', false);
+    for(i=0;i<5;i++){
+      var rx=x+ww*(0.11+i*0.19);
+      box3d(rx, y+hh*0.42, 3, hh*0.42, 64, 92+((w.seed+i*7)%16), '#8a5f3c', '#5c3e26', false);
+    }
+    box3d(x-4, y+hh*0.62, ww+8, hh*0.38, 0, 15, '#585750', '#3b3a35', '#33322d');
+    return;
+  }
+  if(s==='alarm'){
+    var bl=(Math.sin(tNow*9)>0);
+    box3d(x+ww*0.05, y+hh*0.16, ww*0.9, hh*0.68, 0, 34, '#5b2f29', '#3a201c', '#2a1714');
+    box3d(x+ww*0.22, y+hh*0.24, ww*0.5, hh*0.5, 34, 56, '#291a18', '#180f0e', false);
+    box3d(x+ww*0.06, y+hh*0.2, 8, 6, 26, 33, bl?'#ffd27a':'#6b4028', '#4a2918', false);
+    box3d(x+ww*0.9, y+hh*0.2, 8, 6, 26, 33, bl?'#6b4028':'#ffd27a', '#4a2918', false);
+    return;
+  }
+  if(s==='treefall'){
+    for(i=0;i<3;i++){
+      var tx=horiz? x+ww*(0.08+i*0.31) : x+ww*0.28;
+      var ty=horiz? y+hh*0.28 : y+hh*(0.08+i*0.31);
+      var tw=horiz? ww*0.34 : 22, th=horiz? 22 : hh*0.34;
+      box3d(tx,ty,tw,th,0, 20+((w.seed+i*13)%14), '#4c3b2b', '#2f2418', '#241c12');
+    }
+    box3d(x, y+hh*0.42, ww, hh*0.26, 0, 9, '#3d3124', '#251d15', false);
+    return;
+  }
+  /* a burst main: a flooded trench across the road, a cordon round it, the jet still running */
+  box3d(x, y, ww, hh, 0, 6, '#22323a', '#16232a', '#2b3d44');
+  box3d(x+ww*0.08, y+hh*0.10, ww*0.84, hh*0.80, 6, 7, 'rgba(126,174,190,.26)', 'rgba(96,146,164,.2)', false);
+  box3d(x-4, y+5, 6, hh-10, 0, 14, '#a98a2c', '#5c4a12', '#7d6414');
+  box3d(x+ww-2, y+5, 6, hh-10, 0, 14, '#a98a2c', '#5c4a12', '#7d6414');
+  for(i=0;i<4;i++) box3d(x+ww*0.5-3.5, y+hh*(0.08+i*0.25), 7, 10, 0, 24, '#d8bb4a', '#8a6d14', false);
+  var jx=x+ww*0.5, jy=y+hh*0.5, jh=54+Math.sin(tNow*3.1)*8;
+  box3d(jx-8, jy-8, 16, 16, 6, jh, 'rgba(206,232,238,.62)', 'rgba(150,190,200,.42)', false);
+  box3d(jx-14, jy-14, 28, 28, jh-8, jh+3, 'rgba(232,244,247,.55)', 'rgba(190,220,230,.35)', false);
 }
 function drawHouse(w){
   /* ---- a block is a row of buildings, not a boulder ----
@@ -2848,6 +3173,36 @@ function rayWall(x,y){
 }
 /* A ray from the muzzle that stops on the first surface it meets: block, wreck or body.
    The dot is drawn on that surface, so a wall gets an upright speck and the street a flat one. */
+/* the next checkpoint, marked in the world: a ring on the ground and a beam you can see
+   through the dark, or a chevron on the frame edge when the target is out of shot */
+function drawWaypoint(){
+  if(!route || !player || scene!=='play') return;
+  var T=route.pts[0]; if(!T) return;
+  var p=pj(T.x,T.y,0), pulse=0.5+0.5*Math.sin(tNow*4);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  var mgx=76, mgy=76;
+  if(p[0]>mgx&&p[0]<W-mgx&&p[1]>mgy&&p[1]<H-mgy){
+    ctx.globalAlpha=0.13+0.10*pulse;
+    ctx.fillStyle='#ffd98a';
+    ctx.beginPath();
+    ctx.moveTo(p[0]-20,p[1]-150); ctx.lineTo(p[0]+20,p[1]-150);
+    ctx.lineTo(p[0]+7,p[1]); ctx.lineTo(p[0]-7,p[1]);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha=0.55+0.30*pulse;
+    ctx.strokeStyle='#ffd98a'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.ellipse(p[0],p[1],32+8*pulse,16+4*pulse,0,0,6.284); ctx.stroke();
+  } else {
+    var a=Math.atan2(p[1]-H*0.5,p[0]-W*0.5);
+    var ex=clamp(p[0],mgx,W-mgx), ey=clamp(p[1],mgy,H-mgy);
+    ctx.save(); ctx.translate(ex,ey); ctx.rotate(a);
+    ctx.globalAlpha=0.7+0.25*pulse;
+    ctx.fillStyle='#ffd98a';
+    ctx.beginPath(); ctx.moveTo(20,0); ctx.lineTo(-11,11); ctx.lineTo(-4,0); ctx.lineTo(-11,-11);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha=1;
+}
 function drawLaser(){
   if(window.__nolaser) return;
   if(!player||scene!=='play') return;
@@ -3227,6 +3582,7 @@ function render(){
   }
   }
   drawLaser();
+  drawWaypoint();
   /* fire is its own light: it burns through the dark and rims the water orange */
   for(var fi=0;fi<fires.length;fi++){
     var fq=fires[fi];
@@ -3346,8 +3702,18 @@ function hud(){
   }
   $('grenCnt').textContent=player.grenades;
   $('mineCnt').textContent=player.traps;
-  $('waveT').textContent='WAVE '+Math.min(waveIndex,level.waves.length)+'/'+level.waves.length;
-  $('waveS').textContent=(zombies.length+waveQueue.length)+' LEFT';
+  if(level.campaign && route){
+    var cpTxt=Math.min(route.done+1,route.total)+'/'+route.total;
+    $('waveT').textContent=route.district+' · '+cpTxt;
+    var tgt=route.pts[0];
+    if(tgt){
+      var mD=Math.round(Math.sqrt(dist2(player.x,player.y,tgt.x,tgt.y))/8);
+      $('waveS').textContent=(route.pts.length<=1?(route.boss?'KILL THE GATEKEEPER':'EXTRACT'):'NEXT STOP')+' · '+mD+'M';
+    } else $('waveS').textContent='EXTRACT';
+  } else {
+    $('waveT').textContent='WAVE '+Math.min(waveIndex,level.waves.length)+'/'+level.waves.length;
+    $('waveS').textContent=(zombies.length+waveQueue.length)+' LEFT';
+  }
   $('spName').textContent=CH.special.toUpperCase();
   $('spCd').textContent=player.spCd>0?Math.ceil(player.spCd)+'s':'READY';
   $('bSpecial').classList.toggle('off',player.spCd>0);
@@ -3557,7 +3923,9 @@ $('pause').addEventListener('click',function(){
   $('ui').hidden=false; $('hud').classList.remove('on');
   $('stTag').textContent='paused';
   $('stTitle').textContent=level.name;
-  $('stBody').textContent='Sector '+(levelIndex+1)+' · wave '+Math.min(waveIndex,level.waves.length)+' of '+level.waves.length+
+  $('stBody').textContent=(level.campaign&&route
+      ? level.name+' · '+route.district+' · checkpoint '+Math.min(route.done+1,route.total)+' of '+route.total
+      : 'Sector '+(levelIndex+1)+' · wave '+Math.min(waveIndex,level.waves.length)+' of '+level.waves.length)+
     '\n\nKills this run: '+runKills+'. Scrap: '+scrap+'.';
   $('stGo').textContent='RESUME';
   show('s-story');
@@ -3663,7 +4031,10 @@ window.__dn={
     wave:waveIndex,waves:level?level.waves.length:0,scrap:scrap,ammo:player?player.ammo:0,
     x:player?Math.round(player.x):0,y:player?Math.round(player.y):0,mines:mines.length,
     nades:player?player.grenades:0,traps:player?player.traps:0,theme:level?level.theme:null,
-    up:JSON.parse(JSON.stringify(save.up)),levels:save.levels,kills:save.kills}; },
+    up:JSON.parse(JSON.stringify(save.up)),levels:save.levels,kills:save.kills,
+    district:route?route.district:null,checkpoints:route?route.total:0,
+    cpDone:route?route.done:0,blockers:blockers.length,
+    objective:route&&route.pts[0]?{x:Math.round(route.pts[0].x),y:Math.round(route.pts[0].y)}:null}; },
   startStory:function(i){ mode='story'; startLevel(i||0); },
   startSurvival:startSurvival,
   startDaily:startDaily,
@@ -3699,6 +4070,12 @@ window.__dn={
   tp:function(x,y){ if(player){ player.x=x; player.y=y; } },
   types:function(){ var o={}; zombies.forEach(function(z){ o[z.type]=(o[z.type]||0)+1; }); return o; },
   queue:function(){ return waveQueue.slice(); },
+  campaign:function(){ return route?{district:route.district,done:route.done,total:route.total,
+    pts:route.pts.map(function(p){ return {x:Math.round(p.x),y:Math.round(p.y)}; }),
+    blockers:blockers.map(function(b){ return {x:Math.round(b.x),y:Math.round(b.y),w:Math.round(b.w),h:Math.round(b.h),style:b.style}; }),
+    reachable:!!(route.pts[0]&&reachOK(bfsField(player.x,player.y),route.pts[0].x,route.pts[0].y))}:null; },
+  goCheckpoint:function(){ if(route&&route.pts[0]){ player.x=route.pts[0].x; player.y=route.pts[0].y; } },
+  trigger:function(kind){ if(route) fireEvent(kind===undefined?route.done:kind); },
   clearWave:function(){ waveQueue=[]; zombies.length=0; },
   char:function(id){ save.char=id; applyUpgrades(); },
   los:function(x1,y1,x2,y2){ return los(x1,y1,x2,y2); },
