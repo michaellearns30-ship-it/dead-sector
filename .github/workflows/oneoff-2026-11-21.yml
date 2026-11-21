@@ -1,0 +1,46 @@
+name: Publish latest build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  latest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild the latest build and check it
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 "https://site-9ff8c8b6cb144074b0d31eb8e437724b.freebuff.page/" -o index.html
+          python3 - <<'PY'
+          import hashlib
+          s = open('index.html', encoding='utf-8').read()
+          pairs = [
+              ("  var ROAD=TILE*2;                /* the street: two tiles, narrow */",
+               "  var ROAD=TILE*3;                /* the street: three tiles wide, so the corridor breathes */"),
+              ("  var throughLeft = hiddenLeft? 2 : 1;\n  var throughRight = hiddenLeft? 1 : 0;",
+               "  var throughLeft  = (hiddenLeft && hiddenIdx===1)? 2 : 1;\n  var throughRight = (!hiddenLeft && hiddenIdx===1)? 2 : 0;"),
+          ]
+          for old, new in pairs:
+              assert s.count(old) == 1
+              s = s.replace(old, new)
+          open('index.html', 'w', encoding='utf-8', newline='\n').write(s)
+          got = hashlib.md5(open('index.html', 'rb').read()).hexdigest()
+          print('md5', got)
+          assert got == '42137475656d7bc506db442c53fa9c5f', 'checksum mismatch'
+          print('checksum ok')
+          PY
+          cp index.html "Dead-Sector-2026-11-21.html"
+          wc -c index.html "Dead-Sector-2026-11-21.html"
+      - name: Commit and remove the one-off
+        run: |
+          set -euo pipefail
+          git config user.name "dead-sector-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -q .github/workflows/oneoff-2026-11-21.yml
+          git add index.html "Dead-Sector-2026-11-21.html"
+          git commit -m "Publish the latest Dead Sector build (2026-11-21)"
+          git push
