@@ -1288,7 +1288,7 @@ function buildCityWorld(theme){
      same 'house' style, drawn by the same code, out of the same palette. */
   var TILE=76;
   var T=40;                       /* border wall */
-  var ROAD=TILE*2;                /* the street: two tiles, narrow */
+  var ROAD=TILE*3;                /* the street: three tiles wide, so the corridor breathes */
   var WALK=34;                    /* pavement between kerb and shopfront */
   var BUILD=TILE*4;               /* four tiles of building on each side */
   var COLS=1, ROWS=26;            /* one avenue, twenty-six tiles long */
@@ -1316,8 +1316,8 @@ function buildCityWorld(theme){
   var hiddenLeft=R()<0.5, hiddenIdx=1+Math.floor(R()*2);
   /* two alleys run through: one on each side, never the hidden one, so the secret stays a
      secret and every district has a way round a blocked road on both kerbs */
-  var throughLeft = hiddenLeft? 2 : 1;
-  var throughRight = hiddenLeft? 1 : 0;
+  var throughLeft  = (hiddenLeft && hiddenIdx===1)? 2 : 1;
+  var throughRight = (!hiddenLeft && hiddenIdx===1)? 2 : 0;
   function cutSide(left){
     var x0 = left? T : rightFront;
     var w  = left? (leftFront-T) : (world.w-T-rightFront);
